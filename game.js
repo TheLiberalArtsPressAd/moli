@@ -97,8 +97,13 @@
         return r.json();
       }).then(function (data) {
         if (data && typeof data === "object") {
-          CONFIG = normalizeConfig(data);
-          finish(true, p);
+          try {
+            CONFIG = normalizeConfig(data);
+            finish(true, p);
+          } catch (err) {
+            if (window.console) console.error(err);
+            tryNext();
+          }
         } else {
           tryNext();
         }
@@ -871,7 +876,7 @@
 
   // ---------------------------------------------------------------- buttons
   startBtn.addEventListener("click", function () {
-    if (!configLoaded) return;
+    if (!CONFIG.Players || !CONFIG.Players.length || !CONFIG.Levels || !CONFIG.Levels.length) return;
     newGame();
   });
 
@@ -897,6 +902,14 @@
   // ---------------------------------------------------------------- boot
   try {
     resize();
+  } catch (err) {
+    if (window.console) console.error(err);
+  }
+  // Render the menu from the built-in defaults right away so the character /
+  // level cards are never empty while the JSON config is still loading (or if
+  // it fails to load at all).
+  try {
+    buildMenu();
   } catch (err) {
     if (window.console) console.error(err);
   }
