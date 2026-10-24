@@ -144,7 +144,7 @@
         var mp = /[?&]player=(\d+)/.exec(q);
         if (mp) selectedPlayer = clamp(parseInt(mp[1], 10), 0, CONFIG.Players.length - 1);
         buildMenu();
-        setTimeout(function () { try { newGame(); } catch (e) { if (window.console) console.error(e); } }, 250);
+        setTimeout(function () { try { startGame(); } catch (e) { if (window.console) console.error(e); } }, 250);
       }
     } catch (e) {}
   }
@@ -936,14 +936,17 @@
   canvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 
   // ---------------------------------------------------------------- buttons
-  startBtn.addEventListener("click", function () {
+  // 等原版美術載入完成再開場，避免地圖還沒下載完就先建立場景
+  function startGame() {
     if (!CONFIG.Players || !CONFIG.Players.length || !CONFIG.Levels || !CONFIG.Levels.length) return;
     if (window.ART && !ART.isReady()) {
       ART.load().then(function () { newGame(); });
       return;
     }
     newGame();
-  });
+  }
+
+  startBtn.addEventListener("click", startGame);
 
   document.getElementById("quitBtn").addEventListener("click", function () {
     if (G) G.over = true;
@@ -955,7 +958,7 @@
 
   document.getElementById("retryBtn").addEventListener("click", function () {
     gameOverEl.classList.add("hidden");
-    newGame();
+    startGame();
   });
 
   document.getElementById("menuBtn").addEventListener("click", function () {
