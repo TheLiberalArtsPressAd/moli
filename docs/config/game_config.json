@@ -1,0 +1,414 @@
+{
+  "PlayerGrow": { "HP": 0.06, "MP": 0.02, "ATK": 0.02, "DEF": 0.03, "SPD": 0.01 },
+  "EnemyGrow": { "HP": 0.045, "MP": 0.1, "ATK": 0.02, "DEF": 0.03, "SPD": 0.01 },
+  "Players": [
+    {
+      "Index": 0,
+      "Serial": 105053,
+      "WeaponSerial": 0,
+      "Name": "劍士",
+      "Desc": "一把聖劍披荊斬棘",
+      "SkillDesc": "弧月斬",
+      "ATKSkill": 0,
+      "SpecialSkill": 15,
+      "ATK": 5.0,
+      "HP": 4.0,
+      "MP": 2.6,
+      "DEF": 4.0,
+      "SPD": 3.0
+    },
+    {
+      "Index": 1,
+      "Serial": 106126,
+      "WeaponSerial": 20814,
+      "Name": "弓箭手",
+      "Desc": "看我亂箭齊發",
+      "SkillDesc": "亂射",
+      "ATKSkill": 1,
+      "SpecialSkill": 2,
+      "ATK": 4.0,
+      "HP": 3.0,
+      "MP": 2.6,
+      "DEF": 2.8,
+      "SPD": 5.0
+    }
+  ],
+  "Enemies": [
+    { "ID": 0, "Serial": 101800, "Name": "哥布林", "Desc": "矮小的怪物，喜歡在森林中出沒。", "ATK": 2.5, "DEF": 2.5, "SPD": 2.0, "HP": 3.5, "MP": 5.0, "Skills": [{ "SkillID": 0, "Level": 1 }, { "SkillID": 10, "Level": 1 }] },
+    { "ID": 1, "Serial": 101801, "Name": "紅帽哥布林", "Desc": "戴著紅帽的哥布林首領候補。", "ATK": 2.5, "DEF": 2.5, "SPD": 2.0, "HP": 4.0, "MP": 5.0, "Skills": [{ "SkillID": 0, "Level": 1 }, { "SkillID": 10, "Level": 1 }] },
+    { "ID": 2, "Serial": 101400, "Name": "樹精", "Desc": "森林中的守護者。", "ATK": 2.5, "DEF": 4.0, "SPD": 1.5, "HP": 5.0, "MP": 5.0, "Skills": [{ "SkillID": 0, "Level": 1 }, { "SkillID": 10, "Level": 1 }] },
+    { "ID": 3, "Serial": 101201, "Name": "使魔", "Desc": "靈巧的小型魔物。", "ATK": 2.5, "DEF": 2.5, "SPD": 3.0, "HP": 2.4, "MP": 5.0, "Skills": [{ "SkillID": 0, "Level": 1 }, { "SkillID": 8, "Level": 1 }] },
+    { "ID": 4, "Serial": 101242, "Name": "小蝙蝠(紅)", "Desc": "成群飛行的蝙蝠。", "ATK": 2.5, "DEF": 2.5, "SPD": 3.0, "HP": 2.4, "MP": 5.0, "Skills": [] },
+    { "ID": 5, "Serial": 101240, "Name": "小蝙蝠(綠)", "Desc": "成群飛行的蝙蝠。", "ATK": 2.5, "DEF": 2.5, "SPD": 2.4, "HP": 2.5, "MP": 0.0, "Skills": [] },
+    { "ID": 6, "Serial": 101313, "Name": "蜜蜂", "Desc": "速度極快的昆蟲。", "ATK": 5.0, "DEF": 1.0, "SPD": 4.0, "HP": 2.5, "MP": 5.0, "Skills": [{ "SkillID": 0, "Level": 1 }, { "SkillID": 9, "Level": 1 }] },
+    { "ID": 7, "Serial": 101020, "Name": "老鼠", "Desc": "喜歡在陰暗角落穿行。", "ATK": 2.5, "DEF": 1.0, "SPD": 4.0, "HP": 2.5, "MP": 5.0, "Skills": [] },
+    { "ID": 8, "Serial": 101100, "Name": "喪屍", "Desc": "行動緩慢但耐打。", "ATK": 3.0, "DEF": 3.0, "SPD": 1.5, "HP": 5.0, "MP": 0.0, "Skills": [] },
+    { "ID": 9, "Serial": 101120, "Name": "小石魔像", "Desc": "堅硬的小型魔像。", "ATK": 2.0, "DEF": 2.0, "SPD": 2.0, "HP": 0.3, "MP": 0.0, "Skills": [] },
+    { "ID": 10, "Serial": 101250, "Name": "大蝙蝠", "Desc": "巨大的蝙蝠。", "ATK": 2.0, "DEF": 2.0, "SPD": 2.5, "HP": 0.5, "MP": 0.0, "Skills": [] },
+    { "ID": 11, "Serial": 101330, "Name": "蜘蛛", "Desc": "結網的獵手。", "ATK": 2.0, "DEF": 1.0, "SPD": 4.0, "HP": 0.5, "MP": 0.0, "Skills": [] },
+    { "ID": 12, "Serial": 101500, "Name": "史萊姆", "Desc": "軟軟的果凍狀生物。", "ATK": 2.0, "DEF": 3.0, "SPD": 1.5, "HP": 0.8, "MP": 0.0, "Skills": [] },
+    { "ID": 13, "Serial": 101501, "Name": "史萊姆(藍)", "Desc": "軟軟的果凍狀生物。", "ATK": 2.0, "DEF": 3.0, "SPD": 1.5, "HP": 0.8, "MP": 0.0, "Skills": [] }
+  ],
+  "Skills": [
+    {
+      "ID": 0, "Name": "揮砍", "Desc": "劍指前方，所向披靡", "Icon": 10139,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": true,
+      "CD": 2.0, "CDReduceRatePerLevel": 0.03, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.2, "BelongSkillID": 0,
+      "AbilityDescTpl": "向面前距離{Distance}和{Range}度範圍揮砍{Count}次，對範圍內的敵人造成{Percent}%傷害。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentRatePerLevel}%傷害。",
+      "Params": [
+        { "Key": "Percent", "Value": "100", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Distance", "Value": "10", "Type": "int" },
+        { "Key": "DistancePerLevel", "Value": "1", "Type": "int" },
+        { "Key": "Range", "Value": "90", "Type": "int" },
+        { "Key": "RangePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Count", "Value": "1", "Type": "int" },
+        { "Key": "CountPer3Level", "Value": "1", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 1, "Name": "弓術射擊", "Desc": "使用弓箭向遠處目標射擊", "Icon": 10100,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": true,
+      "CD": 2.0, "CDReduceRatePerLevel": 0.03, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.2, "BelongSkillID": 0,
+      "AbilityDescTpl": "向目標方向以{Speed}速度發射箭矢，造成{Percent}%傷害，最大距離{Range}。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentRatePerLevel}%傷害，{RangePerLevel}射程。",
+      "Params": [
+        { "Key": "Percent", "Value": "100", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Range", "Value": "50", "Type": "int" },
+        { "Key": "RangePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Speed", "Value": "50", "Type": "int" },
+        { "Key": "SpeedPerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Count", "Value": "1", "Type": "int" },
+        { "Key": "Through", "Value": "0", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 2, "Name": "亂射", "Desc": "向遠處射出大量箭矢", "Icon": 10011,
+      "IsSpecial": true, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 10.0, "CDReduceRatePerLevel": 0.05, "MaxLevel": 10,
+      "MPCost": 10, "MPCostPerLevel": 0.2, "BelongSkillID": 0,
+      "AbilityDescTpl": "發射大量箭矢造成{Range}範圍的{Percent}%傷害，最多{Count}次。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentRatePerLevel}%傷害。",
+      "Params": [
+        { "Key": "Percent", "Value": "80", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Count", "Value": "1", "Type": "int" },
+        { "Key": "CountPer3Level", "Value": "1", "Type": "int" },
+        { "Key": "Range", "Value": "50", "Type": "int" },
+        { "Key": "RangePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Speed", "Value": "50", "Type": "int" },
+        { "Key": "SpeedPerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Rate", "Value": "1", "Type": "float" }
+      ]
+    },
+    {
+      "ID": 3, "Name": "健身達人", "Desc": "力量！我渴望力量！", "Icon": 10028,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "基礎傷害增加{Percent}%。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentRatePerLevel}%基礎傷害。",
+      "Params": [
+        { "Key": "Percent", "Value": "5", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "1", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 4, "Name": "長跑愛好者", "Desc": "你猜我跑得多快？", "Icon": 10111,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "增加{Percent}%移動速度。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentRatePerLevel}%移動速度。",
+      "Params": [
+        { "Key": "Percent", "Value": "5", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "1", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 5, "Name": "護衛", "Desc": "我這臉猶如城牆", "Icon": 10007,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "增加{Percent}%基礎防禦。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentRatePerLevel}%基礎防禦。",
+      "Params": [
+        { "Key": "Percent", "Value": "5", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "1", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 6, "Name": "好學生", "Desc": "經驗！寶貴的經驗！", "Icon": 90065,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 20,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "獲取到的經驗增加{Percent}%。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentRatePerLevel}%。",
+      "Params": [
+        { "Key": "Percent", "Value": "0", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "10", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 7, "Name": "財迷寶寶", "Desc": "地上那些魔石都是我的！", "Icon": 30075,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 20,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "獲取到的金幣增加{Percent}%。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentRatePerLevel}%。",
+      "Params": [
+        { "Key": "Percent", "Value": "0", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "10", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 8, "Name": "衝啊", "Desc": "看見前面沒！衝！", "Icon": 30075,
+      "IsSpecial": false, "IsLearnable": false, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 20,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "怪物專用技能，短時間加快移動速度",
+      "AbilityLevelUpDescTpl": "怪物專用技能",
+      "Params": []
+    },
+    {
+      "ID": 9, "Name": "我閃！", "Desc": "閃避點滿", "Icon": 30075,
+      "IsSpecial": false, "IsLearnable": false, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 20,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "怪物專用技能，Dash！",
+      "AbilityLevelUpDescTpl": "怪物專用技能",
+      "Params": []
+    },
+    {
+      "ID": 10, "Name": "我擋！", "Desc": "嘿嘿～防禦我最棒", "Icon": 30075,
+      "IsSpecial": false, "IsLearnable": false, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 20,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "怪物專用技能，防禦！",
+      "AbilityLevelUpDescTpl": "怪物專用技能",
+      "Params": []
+    },
+    {
+      "ID": 11, "Name": "力量光環", "Desc": "奮起吧！我的兄弟們！", "Icon": 30075,
+      "IsSpecial": false, "IsLearnable": false, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 20,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "為周邊怪物增加20%攻擊",
+      "AbilityLevelUpDescTpl": "怪物專用技能",
+      "Params": [
+        { "Key": "Light", "Value": "0", "Type": "int" },
+        { "Key": "Range", "Value": "1", "Type": "float" },
+        { "Key": "RangePerLevel", "Value": "0.1", "Type": "float" }
+      ]
+    },
+    {
+      "ID": 12, "Name": "防禦光環", "Desc": "奮起吧！我的兄弟們！", "Icon": 30075,
+      "IsSpecial": false, "IsLearnable": false, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 20,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "為周邊怪物增加20%防禦",
+      "AbilityLevelUpDescTpl": "怪物專用技能",
+      "Params": [
+        { "Key": "Light", "Value": "1", "Type": "int" },
+        { "Key": "Range", "Value": "1", "Type": "float" },
+        { "Key": "RangePerLevel", "Value": "0.1", "Type": "float" }
+      ]
+    },
+    {
+      "ID": 13, "Name": "速度光環", "Desc": "奮起吧！我的兄弟們！", "Icon": 30075,
+      "IsSpecial": false, "IsLearnable": false, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 20,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "為周邊怪物增加20%速度",
+      "AbilityLevelUpDescTpl": "怪物專用技能",
+      "Params": [
+        { "Key": "Light", "Value": "2", "Type": "int" },
+        { "Key": "Range", "Value": "1", "Type": "float" },
+        { "Key": "RangePerLevel", "Value": "0.1", "Type": "float" }
+      ]
+    },
+    {
+      "ID": 14, "Name": "生命光環", "Desc": "奮起吧！我的兄弟們！", "Icon": 30075,
+      "IsSpecial": false, "IsLearnable": false, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 20,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "為周邊怪物增加20%最大生命",
+      "AbilityLevelUpDescTpl": "怪物專用技能",
+      "Params": [
+        { "Key": "Light", "Value": "3", "Type": "int" },
+        { "Key": "Range", "Value": "1", "Type": "float" },
+        { "Key": "RangePerLevel", "Value": "0.1", "Type": "float" }
+      ]
+    },
+    {
+      "ID": 15, "Name": "弧月斬", "Desc": "一劍斬月，弧月斬！", "Icon": 10078,
+      "IsSpecial": true, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 10.0, "CDReduceRatePerLevel": 0.03, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.2, "BelongSkillID": 0,
+      "AbilityDescTpl": "向目標方向揮出劍氣，對{Range}範圍內敵人造成{Percent}%傷害。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentRatePerLevel}%傷害。",
+      "Params": [
+        { "Key": "Percent", "Value": "80", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Range", "Value": "50", "Type": "int" },
+        { "Key": "RangePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Speed", "Value": "50", "Type": "int" },
+        { "Key": "SpeedPerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Count", "Value": "1", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 16, "Name": "武力全開", "Desc": "暴擊！給我狠狠的暴擊！", "Icon": 90035,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "攻擊有{Percent}%機率造成2倍暴擊傷害。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentRatePerLevel}%。",
+      "Params": [
+        { "Key": "Percent", "Value": "10", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "5", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 17, "Name": "飛毛腿", "Desc": "你看我跑多快～", "Icon": 30040,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "降低躲避CD的{Percent}%時長，並增加閃避點數。",
+      "AbilityLevelUpDescTpl": "每級降低{PercentRatePerLevel}%。",
+      "Params": [
+        { "Key": "Percent", "Value": "10", "Type": "int" },
+        { "Key": "PercentRatePerLevel", "Value": "1", "Type": "int" },
+        { "Key": "Count", "Value": "1", "Type": "int" },
+        { "Key": "CountLevel", "Value": "5", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 18, "Name": "緩速光環", "Desc": "在我的地盤這～你就得聽我的", "Icon": 90036,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "對進入光環{Range}範圍的敵人造成{Effect}%減速。",
+      "AbilityLevelUpDescTpl": "每級增大{RangePerLevel}範圍。",
+      "Params": [
+        { "Key": "Range", "Value": "50", "Type": "int" },
+        { "Key": "RangePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Effect", "Value": "10", "Type": "int" },
+        { "Key": "EffectPerLevel", "Value": "5", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 19, "Name": "灼熱光環", "Desc": "在火熱地獄中哀嚎吧", "Icon": 90035,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "對進入光環{Range}範圍的敵人每秒造成{Effect}%攻擊力傷害。",
+      "AbilityLevelUpDescTpl": "每級提高{EffectPerLevel}%傷害。",
+      "Params": [
+        { "Key": "Range", "Value": "50", "Type": "int" },
+        { "Key": "RangePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Effect", "Value": "10", "Type": "int" },
+        { "Key": "EffectPerLevel", "Value": "1", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 20, "Name": "拿來吧你", "Desc": "我的！都是我的！", "Icon": 30076,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": false,
+      "CD": 0.0, "CDReduceRatePerLevel": 0.0, "MaxLevel": 20,
+      "MPCost": 0, "MPCostPerLevel": 0.0, "BelongSkillID": 0,
+      "AbilityDescTpl": "拾取範圍擴大{Range}%。",
+      "AbilityLevelUpDescTpl": "每級擴大{RangePerLevel}%範圍。",
+      "Params": [
+        { "Key": "Range", "Value": "0", "Type": "int" },
+        { "Key": "RangePerLevel", "Value": "10", "Type": "int" }
+      ]
+    },
+    {
+      "ID": 21, "Name": "迅捷之風", "Desc": "大風起兮雲飛揚", "Icon": 10112,
+      "IsSpecial": false, "IsLearnable": true, "IsAutoSkill": true,
+      "CD": 5.0, "CDReduceRatePerLevel": 0.05, "MaxLevel": 10,
+      "MPCost": 0, "MPCostPerLevel": 0.2, "BelongSkillID": 0,
+      "AbilityDescTpl": "向前方釋放強風，對{Range}距離{Radius}範圍的敵人造成無視防禦的{Percent}%攻擊力傷害。",
+      "AbilityLevelUpDescTpl": "每級增加{PercentPerLevel}%傷害。",
+      "Params": [
+        { "Key": "Range", "Value": "50", "Type": "int" },
+        { "Key": "RangePerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Percent", "Value": "20", "Type": "int" },
+        { "Key": "PercentPerLevel", "Value": "8", "Type": "int" },
+        { "Key": "Speed", "Value": "20", "Type": "int" },
+        { "Key": "SpeedPerLevel", "Value": "5", "Type": "int" },
+        { "Key": "Radius", "Value": "30", "Type": "int" },
+        { "Key": "RadiusPerLevel", "Value": "2", "Type": "int" }
+      ]
+    }
+  ],
+  "Levels": [
+    {
+      "Name": "哥布林森林",
+      "CoverIndex": 0,
+      "Audio": 210,
+      "Difficulty": 1,
+      "MapWidth": 50,
+      "MapHeight": 50,
+      "PaletIndex": 0,
+      "BorderSerial": 10014,
+      "GroundSerials": [5355, 5356, 5357, 5358, 5359, 5360],
+      "DecorationsSerials": [11087, 11088, 11098, 11099, 11100, 11101, 11625, 11647, 11646, 11650],
+      "UnitSerials": [10015, 10016, 10017, 10018, 10019, 10020, 10021, 10022, 10023, 10058],
+      "NPCInfos": [
+        { "Type": 0, "Serial": 14510 },
+        { "Type": 1, "Serial": 14088 },
+        { "Type": 2, "Serial": 14101 }
+      ],
+      "RoundInfos": [
+        { "Level": 1, "EnemyIDs": [3], "SpawnCountPerEnemy": 10, "Duration": 60, "ExtraDisturbEnemyIDs": [3], "BossInfos": [] },
+        { "Level": 2, "EnemyIDs": [4, 5], "SpawnCountPerEnemy": 10, "Duration": 60, "ExtraDisturbEnemyIDs": [4, 5], "BossInfos": [] },
+        { "Level": 3, "EnemyIDs": [0], "SpawnCountPerEnemy": 15, "Duration": 60, "ExtraDisturbEnemyIDs": [0], "BossInfos": [] },
+        {
+          "Level": 4, "Duration": -1, "EnemyIDs": [], "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            { "EnemyID": 0, "NamePrefix": "首領·", "Level": 5, "Allies": [3, 4, 5], "SpawnPerAlly": 8, "AlliesSpawnInterval": 60, "AlliesSpawnTimes": 10, "Skills": [{ "SkillID": 11, "Level": 1 }] }
+          ]
+        },
+        { "Level": 5, "EnemyIDs": [1], "SpawnCountPerEnemy": 15, "Duration": 60, "ExtraDisturbEnemyIDs": [1, 7, 12, 13], "BossInfos": [] },
+        { "Level": 6, "EnemyIDs": [0, 1], "SpawnCountPerEnemy": 15, "Duration": 60, "BossInfos": [] },
+        { "Level": 7, "EnemyIDs": [0, 1, 3, 4, 5], "SpawnCountPerEnemy": 10, "Duration": 60, "BossInfos": [] },
+        {
+          "Level": 8, "Duration": -1, "EnemyIDs": [], "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            { "EnemyID": 1, "NamePrefix": "紅帽首領·", "Level": 9, "Allies": [0, 1, 3, 4, 5], "SpawnPerAlly": 10, "AlliesSpawnInterval": 60, "AlliesSpawnTimes": 10, "Skills": [{ "SkillID": 11, "Level": 1 }] }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "史萊姆洞窟",
+      "CoverIndex": 1,
+      "Audio": 211,
+      "Difficulty": 2,
+      "MapWidth": 42,
+      "MapHeight": 42,
+      "PaletIndex": 1,
+      "BorderSerial": 10014,
+      "GroundSerials": [5355, 5356, 5357],
+      "DecorationsSerials": [11087, 11088],
+      "UnitSerials": [10015, 10016, 10017],
+      "NPCInfos": [{ "Type": 0, "Serial": 14510 }],
+      "RoundInfos": [
+        { "Level": 3, "EnemyIDs": [12, 13], "SpawnCountPerEnemy": 12, "Duration": 45, "BossInfos": [] },
+        { "Level": 5, "EnemyIDs": [8, 9], "SpawnCountPerEnemy": 12, "Duration": 45, "BossInfos": [] },
+        { "Level": 7, "EnemyIDs": [6, 7, 11], "SpawnCountPerEnemy": 12, "Duration": 45, "BossInfos": [] },
+        {
+          "Level": 10, "Duration": -1, "EnemyIDs": [], "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            { "EnemyID": 8, "NamePrefix": "洞窟之主·", "Level": 12, "Allies": [12, 13, 9], "SpawnPerAlly": 8, "AlliesSpawnInterval": 50, "AlliesSpawnTimes": 10, "Skills": [{ "SkillID": 14, "Level": 1 }] }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,10 +1,12 @@
 ﻿name: Build and Deploy Godot Web to GitHub Pages
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+
+env:
+  GODOT_VERSION: 4.3
+  EXPORT_NAME: moli
+  PROJECT_PATH: godot
 
 permissions:
   contents: read
@@ -13,42 +15,44 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  export-web:
+    name: Web Export
+    runs-on: ubuntu-22.04
     container:
       image: barichello/godot-ci:4.3
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Setup export templates
         run: |
-          mkdir -p ~/.local/share/godot/export_templates/4.3.stable
-          cp -r /root/.local/share/godot/export_templates/4.3.stable/* ~/.local/share/godot/export_templates/4.3.stable/ || true
-          cp -r /root/.local/share/godot/export_templates/* ~/.local/share/godot/export_templates/4.3.stable/ || true
+          mkdir -p ~/.local/share/godot/export_templates
+          if [ -d /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ]; then
+            cp -r /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ~/.local/share/godot/export_templates/
+          fi
+          ls -la ~/.local/share/godot/export_templates/
 
-      - name: Build HTML5
+      - name: Web Build
         run: |
-          mkdir -p docs
-          cd godot
-          godot --headless --export-release "Web" ../docs/index.html
+          mkdir -p /github/workspace/docs
+          cd ${PROJECT_PATH}
+          godot --headless --verbose --import
+          godot --headless --verbose --export-release "Web" ../docs/index.html
 
-      - name: Upload Pages Artifact
+      - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
 
   deploy:
-    needs: build
-    runs-on: ubuntu-latest
+    needs: export-web
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-22.04
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

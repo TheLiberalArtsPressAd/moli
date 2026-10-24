@@ -1,14 +1,5 @@
-﻿[remap]
-
-importer=\"texture\"
-type=\"CompressedTexture2D\"
-uid=\"uid://moli_icon\"
-path=\"res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex\"
-metadata={
-\"vram_texture\": false
-}
-
-[deps]
-
-source_file=\"res://icon.svg\"
-dest_files=[\"res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex\"]
+﻿<svg width="128" height="128" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="24" fill="#1a2232"/>
+  <path d="M64 18 L86 42 L70 42 L70 70 L58 70 L58 42 L42 42 Z" fill="#ffcc4d"/>
+  <circle cx="64" cy="86" r="10" fill="#56d0ff"/>
+</svg>
