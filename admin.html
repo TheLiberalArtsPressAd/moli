@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>魔力寶貝幸存者 · 後台數據編輯</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body class="admin">
+<div class="adminWrap">
+  <aside class="adminSide">
+    <h1>數據後台</h1>
+    <p class="sub">免安裝 Unity / Godot<br />編輯後下載 JSON 覆蓋即可</p>
+    <div id="nav"></div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:14px 0" />
+    <a class="btn" href="index.html" style="width:100%;margin-bottom:8px">▶ 前往遊戲</a>
+    <a class="btn" href="https://github.com/TheLiberalArtsPressAd/moli" target="_blank" rel="noopener" style="width:100%">GitHub 專案</a>
+  </aside>
+
+  <main class="adminMain">
+    <div class="adminTop">
+      <button id="addBtn" class="primary">＋ 新增</button>
+      <button id="dupBtn">複製</button>
+      <button id="delBtn">刪除</button>
+      <span style="flex:1"></span>
+      <span id="status" class="pill">載入中…</span>
+      <button id="reloadBtn">重新載入倉庫檔</button>
+      <button id="downloadBtn" class="primary">下載 game_config.json</button>
+    </div>
+    <p class="note" id="hint"></p>
+    <div id="content"></div>
+  </main>
+</div>
+<script src="admin.js"></script>
+</body>
+</html>
