@@ -129,7 +129,7 @@ button.primary {
 
 button.primary:hover { filter: brightness(1.06); }
 
-#hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
 
 .topbar {
   position: absolute;
