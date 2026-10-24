@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: true
+  cancel-inprocress: true
 
 jobs:
   build:
@@ -26,19 +26,18 @@ jobs:
         with:
           lfs: true
 
-      - name: Setup
+      - name: Setup export templates
         run: |
-          mkdir -p ~/.config/godot
-          mkdir -p /root/.local/share/godot/export_templates/
-          mv /root/.local/share/godot/export_templates/* ~/.local/share/godot/export_templates/ 2>/dev/null || true
+          mkdir -p ~/.local/share/godot/export_templates/4.3.stable
+          cp -r /root/.local/share/godot/export_templates/4.3.stable/* ~/.local/share/gotdot/export_templates/4.3.stable/ 2>/dev/null || cp -r /root/.local/share/godot/export_templates/* ~/.local/share/godot/export_templates/4.3.stable/ 2>/dev/null || true
 
       - name: Build HTML5
         run: |
           mkdir -p docs
           cd godot
-          godot --headless --export-release "HTML5" ../docs/index.html
+          godot --headless --export-release "Web" ../docs/index.html
         env:
-          GODOT_VERSION: 4.3
+        GODOT_VERSION: 4.3
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
