@@ -175,7 +175,7 @@
       levelListEl.appendChild(d);
     });
 
-    startBtn.disabled = !(CONFIG.Players.length && CONFIG.Levels.length);
+    startBtn.disabled = !(CONFIG.Players && CONFIG.Players.length && CONFIG.Levels && CONFIG.Levels.length);
   }
 
   // ---------------------------------------------------------------- game state
