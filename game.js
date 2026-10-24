@@ -173,8 +173,12 @@
 
     CONFIG.Players.forEach(function (p, i) {
       var d = document.createElement("div");
-      d.className = "card" + (i === selectedPlayer ? " selected" : "");
-      d.innerHTML = '<div class="name"></div><div class="desc"></div><div class="stats"></div>';
+      d.className = "card player" + (i === selectedPlayer ? " selected" : "");
+      d.innerHTML = '<div class="art"></div><div class="body">' +
+        '<div class="name"></div><div class="desc"></div><div class="stats"></div></div>';
+      var art = d.querySelector(".art");
+      var artSrc = i === 0 ? "web-assets/art/hero_sword.png" : (i === 1 ? "web-assets/art/hero_bow.png" : "web-assets/art/portrait.png");
+      art.style.backgroundImage = "url(\"" + artSrc + "\")";
       d.querySelector(".name").textContent = p.Name || ("角色 " + i);
       d.querySelector(".desc").textContent = p.Desc || "";
       d.querySelector(".stats").textContent = statLine(p);
@@ -184,8 +188,12 @@
 
     CONFIG.Levels.forEach(function (lv, i) {
       var d = document.createElement("div");
-      d.className = "card" + (i === selectedLevel ? " selected" : "");
-      d.innerHTML = '<div class="name"></div><div class="desc"></div><div class="stats"></div>';
+      d.className = "card level" + (i === selectedLevel ? " selected" : "");
+      d.innerHTML = '<div class="cover"></div><div class="body">' +
+        '<div class="name"></div><div class="desc"></div><div class="stats"></div></div>';
+      var cover = d.querySelector(".cover");
+      var url = (window.ART && ART.levelCover) ? ART.levelCover(lv, i) : "";
+      if (url) cover.style.backgroundImage = "url(\"" + url + "\")";
       d.querySelector(".name").textContent = lv.Name || ("關卡 " + (i + 1));
       var rounds = (lv.RoundInfos || []).length;
       d.querySelector(".desc").textContent = "難度 Lv." + num(lv.Difficulty, 1) + " · " + rounds + " 波攻勢";
@@ -193,6 +201,11 @@
       d.addEventListener("click", function () { selectedLevel = i; buildMenu(); });
       levelListEl.appendChild(d);
     });
+
+    var hero = document.getElementById("menuHero");
+    if (hero) {
+      hero.src = selectedPlayer === 1 ? "web-assets/art/hero_bow.png" : "web-assets/art/hero_sword.png";
+    }
 
     startBtn.disabled = !(CONFIG.Players && CONFIG.Players.length && CONFIG.Levels && CONFIG.Levels.length);
   }
@@ -223,10 +236,7 @@
   window.addEventListener("resize", resize);
 
   function levelTerrainKind(lv) {
-    var n = (lv.Name || "") + " " + (lv.Terrain || "");
-    if (/洞窟|洞穴|迷宮|地下|坑道|遺跡/.test(n)) return "cave";
-    if (/森林|林|平原|草原/.test(n)) return "forest";
-    return "island";
+    return lv.Terrain || "forest";
   }
 
   function newGame() {
@@ -239,19 +249,19 @@
     var worldW = Math.max(20, num(lv.MapWidth, 50)) * TILE;
     var worldH = Math.max(20, num(lv.MapHeight, 50)) * TILE;
 
-    var terrain = null;
+    var scene = null;
     if (window.ART) {
-      terrain = ART.buildTerrain(lv, levelTerrainKind(lv));
-      worldW = terrain.cols * TILE;
-      worldH = terrain.rows * TILE;
+      scene = ART.buildLevel(lv);
+      worldW = scene.w;
+      worldH = scene.h;
     }
 
     var player = {
       x: worldW / 2,
       y: worldH / 2,
       vx: 0, vy: 0,
-      artKey: num(pInfo.ATKSkill, 0) === 1 ? "hero_bow" : "hero_sword",
-      artScale: 0.72,
+      artScale: 1.15,
+      artHue: num(pInfo.ATKSkill, 0) === 1 ? 120 : 0,
       r: 15,
       face: 1,
       hp: 0, maxhp: 0,
@@ -294,7 +304,7 @@
       victory: false,
       playerInfo: pInfo,
       level: lv,
-      terrain: terrain,
+      scene: scene,
       grow: {
         HP: num(grow.HP, 0.06),
         MP: num(grow.MP, 0.02),
@@ -311,6 +321,21 @@
     gameOverEl.classList.add("hidden");
     document.getElementById("levelName").textContent = G.levelName;
     buildSkillBar();
+
+    // 預覽用：?showcase=1 會在角色周圍排出全部怪物，方便檢查美術
+    if (((window.location && window.location.search) || "").indexOf("showcase") >= 0) {
+      G.enemies.length = 0;
+      var cols = 5;
+      for (var si = 0; si < 14; si++) {
+        var en = spawnEnemy(si, 1, false, "");
+        en.x = G.player.x + ((si % cols) - (cols - 1) / 2) * 160;
+        en.y = G.player.y - 150 + Math.floor(si / cols) * 150;
+        en.spd = 0;
+        en.atk = 0;
+      }
+      G.paused = true; // 只做美術預覽，不推進戰鬥
+    }
+
     nextRound();
     lastTs = 0;
     requestAnimationFrame(frame);
@@ -326,7 +351,10 @@
       var sk = skillById(id) || { Name: "技能" + id, CD: 2 };
       var chip = document.createElement("div");
       chip.className = "skillChip";
-      chip.innerHTML = '<b></b><span></span><i class="cd"></i>';
+      chip.innerHTML = '<img class="ico" alt=""><b></b><span></span><i class="cd"></i>';
+      var ico = chip.querySelector("img.ico");
+      if (sk.Icon) ico.src = ART.skillIcon(sk.Icon);
+      else ico.style.display = "none";
       chip.querySelector("b").textContent = sk.Name || ("技能" + id);
       chip.querySelector("span").textContent = "CD " + num(sk.CD, 2).toFixed(0) + "s";
       chip.dataset.skillId = String(id);
@@ -478,22 +506,18 @@
 
   function updatePlayer(dt) {
     var p = G.player;
-    var ix = 0, iy = 0;
-    if (keys["a"] || keys["arrowleft"]) ix -= 1;
-    if (keys["d"] || keys["arrowright"]) ix += 1;
-    if (keys["w"] || keys["arrowup"]) iy -= 1;
-    if (keys["s"] || keys["arrowdown"]) iy += 1;
+    var mx = 0, my = 0;
+    if (keys["a"] || keys["arrowleft"]) mx -= 1;
+    if (keys["d"] || keys["arrowright"]) mx += 1;
+    if (keys["w"] || keys["arrowup"]) my -= 1;
+    if (keys["s"] || keys["arrowdown"]) my += 1;
 
-    // screen space -> world space (2:1 isometric): x = sx/2 + sy, y = sy - sx/2
-    var mx = ix * 0.5 + iy;
-    var my = iy - ix * 0.5;
-
-    if (!ix && !iy && pointer.active) {
-      var sdx = pointer.x - W / 2, sdy = pointer.y - H / 2;
-      var wdx = sdx * 0.5 + sdy, wdy = sdy - sdx * 0.5;
-      var d = Math.hypot(wdx, wdy);
-      if (d > 12) { mx = wdx / d; my = wdy / d; }
-      else { mx = 0; my = 0; }
+    if (!mx && !my && pointer.active) {
+      var wx = pointer.x + G.cam.x - W / 2;
+      var wy = pointer.y + G.cam.y - H / 2;
+      var dx = wx - p.x, dy = wy - p.y;
+      var d = Math.hypot(dx, dy);
+      if (d > 12) { mx = dx / d; my = dy / d; }
     }
 
     var len = Math.hypot(mx, my);
@@ -502,7 +526,7 @@
       p.vx = mx * p.spd; p.vy = my * p.spd;
       p.x = clamp(p.x + p.vx * dt, p.r, G.worldW - p.r);
       p.y = clamp(p.y + p.vy * dt, p.r, G.worldH - p.r);
-      if (Math.abs(mx - my) > 0.05) p.face = (mx - my) > 0 ? 1 : -1;
+      if (Math.abs(mx) > 0.05) p.face = mx > 0 ? 1 : -1;
     } else {
       p.vx = 0; p.vy = 0;
     }
@@ -548,14 +572,14 @@
   }
 
   var UPGRADES = [
-    { name: "力量", desc: "攻擊力 +12%", apply: function (p) { p.atk *= 1.12; } },
-    { name: "體魄", desc: "最大生命 +15%", apply: function (p) { p.maxhp *= 1.15; p.hp += p.maxhp * 0.1; } },
-    { name: "守護", desc: "防禦 +20%", apply: function (p) { p.def *= 1.2; } },
-    { name: "疾風", desc: "移動速度 +10%", apply: function (p) { p.spd *= 1.1; } },
-    { name: "吸血", desc: "擊殺回復 3% 生命", apply: function (p) { p.lifesteal = (p.lifesteal || 0) + 0.03; } },
-    { name: "磁力", desc: "拾取範圍 +25%", apply: function (p) { p.magnet *= 1.25; } },
-    { name: "暴擊", desc: "暴擊率 +8%", apply: function (p) { p.crit = (p.crit || 0) + 0.08; } },
-    { name: "急速", desc: "技能冷卻 -8%", apply: function (p) { p.atkCdScale = (p.atkCdScale || 1) * 0.92; } }
+    { name: "力量", desc: "攻擊力 +12%", icon: 10028, apply: function (p) { p.atk *= 1.12; } },
+    { name: "體魄", desc: "最大生命 +15%", icon: 10007, apply: function (p) { p.maxhp *= 1.15; p.hp += p.maxhp * 0.1; } },
+    { name: "守護", desc: "防禦 +20%", icon: 90036, apply: function (p) { p.def *= 1.2; } },
+    { name: "疾風", desc: "移動速度 +10%", icon: 10111, apply: function (p) { p.spd *= 1.1; } },
+    { name: "吸血", desc: "擊殺回復 3% 生命", icon: 90035, apply: function (p) { p.lifesteal = (p.lifesteal || 0) + 0.03; } },
+    { name: "磁力", desc: "拾取範圍 +25%", icon: 30075, apply: function (p) { p.magnet *= 1.25; } },
+    { name: "暴擊", desc: "暴擊率 +8%", icon: 10112, apply: function (p) { p.crit = (p.crit || 0) + 0.08; } },
+    { name: "急速", desc: "技能冷卻 -8%", icon: 10139, apply: function (p) { p.atkCdScale = (p.atkCdScale || 1) * 0.92; } }
   ];
 
   function showUpgrades() {
@@ -569,8 +593,10 @@
       var up = pool.splice(idx, 1)[0];
       (function (u) {
         var d = document.createElement("div");
-        d.className = "card";
-        d.innerHTML = '<div class="name"></div><div class="desc"></div>';
+        d.className = "card upgrade";
+        d.innerHTML = '<img class="ico" alt=""><div class="name"></div><div class="desc"></div>';
+        if (u.icon) d.querySelector("img.ico").src = ART.skillIcon(u.icon);
+        else d.querySelector("img.ico").style.display = "none";
         d.querySelector(".name").textContent = u.name;
         d.querySelector(".desc").textContent = u.desc;
         d.addEventListener("click", function () {
@@ -670,81 +696,41 @@
   }
 
   // ---------------------------------------------------------------- render
-  var ENEMY_ART_BY_ID = {
-    0: "goblin", 1: "goblin_red", 2: "treant", 3: "imp", 4: "bat_big", 5: "bat",
-    6: "bee", 7: "rat", 8: "zombie", 9: "golem", 10: "bat_big", 11: "spider",
-    12: "slime", 13: "slime_blue"
-  };
-
-  var ACTOR_SCALE = {
-    goblin: 0.68, goblin_red: 0.68, treant: 0.9, imp: 0.6, bat: 0.55, bat_big: 0.78,
-    bee: 0.5, rat: 0.52, zombie: 0.68, golem: 0.95, spider: 0.55, slime: 0.55, slime_blue: 0.55
-  };
-
-  function actorKeyForEnemy(e) {
-    var n = e.name || "";
-    if (n.indexOf("紅帽") >= 0) return "goblin_red";
-    if (n.indexOf("哥布林") >= 0) return "goblin";
-    if (n.indexOf("樹精") >= 0) return "treant";
-    if (n.indexOf("使魔") >= 0) return "imp";
-    if (n.indexOf("大蝙蝠") >= 0) return "bat_big";
-    if (n.indexOf("蝙蝠") >= 0) return "bat";
-    if (n.indexOf("蜜蜂") >= 0) return "bee";
-    if (n.indexOf("老鼠") >= 0) return "rat";
-    if (n.indexOf("喪屍") >= 0) return "zombie";
-    if (n.indexOf("魔像") >= 0) return "golem";
-    if (n.indexOf("蜘蛛") >= 0) return "spider";
-    if (n.indexOf("史萊姆") >= 0) return n.indexOf("藍") >= 0 ? "slime_blue" : "slime";
-    return ENEMY_ART_BY_ID[e.id] || "goblin";
+  function toScreen(x, y) {
+    return { x: x - G.cam.x + W / 2, y: y - G.cam.y + H / 2 };
   }
 
   function drawBackground() {
-    if (G.terrain && window.ART) {
-      ART.drawGround(ctx, G.terrain, G.cam, W, H, G.time);
-      return;
-    }
-    var cam = G.cam;
-    var ox = cam.x - W / 2, oy = cam.y - H / 2;
-    ctx.fillStyle = "#12161f";
-    ctx.fillRect(0, 0, W, H);
-    var x0 = Math.floor(ox / TILE) - 1, x1 = Math.ceil((ox + W) / TILE) + 1;
-    var y0 = Math.floor(oy / TILE) - 1, y1 = Math.ceil((oy + H) / TILE) + 1;
-    for (var gx = x0; gx <= x1; gx++) {
-      for (var gy = y0; gy <= y1; gy++) {
-        if ((gx + gy) % 2 === 0) continue;
-        var sx = gx * TILE - ox, sy = gy * TILE - oy;
-        if (gx * TILE < 0 || gy * TILE < 0 || gx * TILE > G.worldW || gy * TILE > G.worldH) continue;
-        ctx.fillStyle = "#161b26";
-        ctx.fillRect(sx, sy, TILE, TILE);
-      }
-    }
+    ART.drawGround(ctx, G.scene, G.cam, W, H, G.time);
   }
 
-  // Draw props, enemies and the player back-to-front so overlaps look right.
+  // 樹木、怪物、角色依 y 排序後由後往前畫，重疊才正確
   function drawEntities() {
     var p = G.player;
     var items = [];
     var i, s;
 
-    if (G.terrain && window.ART) {
-      var props = G.terrain.props;
+    if (G.scene && G.scene.props) {
+      var props = G.scene.props;
       for (i = 0; i < props.length; i++) {
         var pr = props[i];
-        s = ART.toScreen(pr.x, pr.y, G.cam, W, H);
-        if (s.x < -180 || s.x > W + 180 || s.y < -220 || s.y > H + 200) continue;
-        items.push({ d: pr.x + pr.y, kind: 0, o: pr, sx: s.x, sy: s.y });
+        if (pr.x < G.cam.x - W / 2 - 200 || pr.x > G.cam.x + W / 2 + 200) continue;
+        if (pr.y < G.cam.y - H / 2 - 320 || pr.y > G.cam.y + H / 2 + 200) continue;
+        s = toScreen(pr.x, pr.y);
+        items.push({ d: pr.y, kind: 0, o: pr, sx: s.x, sy: s.y });
       }
     }
 
     for (i = 0; i < G.enemies.length; i++) {
       var e = G.enemies[i];
-      s = ART.toScreen(e.x, e.y, G.cam, W, H);
-      if (s.x < -120 || s.x > W + 120 || s.y < -160 || s.y > H + 160) continue;
-      items.push({ d: e.x + e.y, kind: 1, o: e, sx: s.x, sy: s.y });
+      if (e.x < G.cam.x - W / 2 - 150 || e.x > G.cam.x + W / 2 + 150) continue;
+      if (e.y < G.cam.y - H / 2 - 150 || e.y > G.cam.y + H / 2 + 150) continue;
+      s = toScreen(e.x, e.y);
+      items.push({ d: e.y, kind: 1, o: e, sx: s.x, sy: s.y });
     }
 
-    s = ART.toScreen(p.x, p.y, G.cam, W, H);
-    items.push({ d: p.x + p.y, kind: 2, o: p, sx: s.x, sy: s.y });
+    s = toScreen(p.x, p.y);
+    items.push({ d: p.y, kind: 2, o: p, sx: s.x, sy: s.y });
 
     items.sort(function (a, b) { return a.d - b.d; });
 
@@ -761,29 +747,20 @@
   }
 
   function drawOnePlayer(p, sx, sy) {
-    var ky = p.artKey || "hero_sword";
-    var sc = p.artScale || 0.72;
-    var bob = Math.sin(G.time * 9) * (Math.abs(p.vx || 0) + Math.abs(p.vy || 0) > 6 ? 1.6 : 0.5);
+    ART.drawPlayer(ctx, p, sx, sy, G.time);
 
-    if (ART.hasOverride("actors", ky)) {
-      var img = ART.override("actors", ky);
-      ctx.drawImage(img, sx - img.width * sc / 2, sy - img.height * sc, img.width * sc, img.height * sc);
-    } else {
-      ART.drawActor(ctx, ky, sx, sy + 2, { scale: sc, flash: p.hitFlash > 0, bob: bob });
-    }
-
-    // compact hp bar above the head
-    var bw = 46, hpr = clamp(p.hp / p.maxhp, 0, 1);
-    var by = sy - 52 * sc;
+    var sc = p.artScale || 1.15;
+    var bw = 56, hpr = clamp(p.hp / p.maxhp, 0, 1);
+    var by = sy - 104 * sc;
     ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.fillRect(sx - bw / 2, by, bw, 4);
+    ctx.fillRect(sx - bw / 2, by, bw, 5);
     ctx.fillStyle = "#6ee7a8";
-    ctx.fillRect(sx - bw / 2, by, bw * hpr, 4);
+    ctx.fillRect(sx - bw / 2, by, bw * hpr, 5);
 
-    ctx.font = "12px sans-serif";
+    ctx.font = "13px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillStyle = "rgba(240,246,255,0.92)";
-    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.fillStyle = "rgba(240,246,255,0.95)";
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
     ctx.lineWidth = 3;
     var label = G.playerName + " Lv." + p.level;
     ctx.strokeText(label, sx, by - 6);
@@ -791,19 +768,11 @@
   }
 
   function drawOneEnemy(e, sx, sy) {
-    var ky = e.artKey || actorKeyForEnemy(e);
-    var sc = e.isBoss ? 1.05 : (e.artScale || ACTOR_SCALE[ky] || 0.62);
-    var bob = Math.sin(G.time * 8 + e.x * 0.05) * 1.3;
+    var scaleMul = e.isBoss ? 1.35 : 1;
+    ART.drawEnemy(ctx, e, sx, sy, G.time, scaleMul);
 
-    if (ART.hasOverride("actors", ky)) {
-      var img = ART.override("actors", ky);
-      ctx.drawImage(img, sx - img.width * sc / 2, sy - img.height * sc, img.width * sc, img.height * sc);
-    } else {
-      ART.drawActor(ctx, ky, sx, sy + 2, { scale: sc, flash: e.hitFlash > 0, bob: bob });
-    }
-
-    var w = 34 * sc + 14, hpr = clamp(e.hp / e.maxhp, 0, 1);
-    var barY = sy - 66 * sc;
+    var w = (e.isBoss ? 90 : 46), hpr = clamp(e.hp / e.maxhp, 0, 1);
+    var barY = sy - (e.isBoss ? 118 : 68);
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(sx - w / 2, barY, w, 4);
     ctx.fillStyle = hpr > 0.5 ? "#6ee7a8" : (hpr > 0.22 ? "#ffd166" : "#ff6b6b");
@@ -820,7 +789,7 @@
   function drawOrbs() {
     for (var i = 0; i < G.orbs.length; i++) {
       var o = G.orbs[i];
-      var sp = ART.toScreen(o.x, o.y, G.cam, W, H);
+      var sp = toScreen(o.x, o.y);
       var sx = sp.x, sy = sp.y;
       ctx.save();
       ctx.translate(sx, sy);
@@ -838,7 +807,7 @@
       var f = G.fx[i];
       f.t -= dt;
       if (f.t <= 0) { G.fx.splice(i, 1); continue; }
-      var spf = ART.toScreen(f.x, f.y, G.cam, W, H);
+      var spf = toScreen(f.x, f.y);
       var sx = spf.x, sy = spf.y;
       if (f.type === "ring") {
         var k = 1 - f.t / 0.45;
@@ -865,7 +834,7 @@
       t.t -= dt;
       t.y -= 34 * dt;
       if (t.t <= 0) { G.floaters.splice(j, 1); continue; }
-      var sp2 = ART.toScreen(t.x, t.y, G.cam, W, H);
+      var sp2 = toScreen(t.x, t.y);
       var fx = sp2.x, fy = sp2.y;
       ctx.globalAlpha = clamp(t.t / 0.7, 0, 1);
       ctx.font = "bold 13px sans-serif";
@@ -927,9 +896,10 @@
       updateEnemies(dt);
       updateWaves(dt);
 
-      // camera lerp (clamp to world, not to screen size: the view is isometric)
-      var tx = clamp(G.player.x, TILE * 2, Math.max(TILE * 2, G.worldW - TILE * 2));
-      var ty = clamp(G.player.y, TILE * 2, Math.max(TILE * 2, G.worldH - TILE * 2));
+      // camera lerp（俯視角，鏡頭不超出地圖）
+      var halfW = W / 2, halfH = H / 2;
+      var tx = G.worldW > W ? clamp(G.player.x, halfW, G.worldW - halfW) : G.worldW / 2;
+      var ty = G.worldH > H ? clamp(G.player.y, halfH, G.worldH - halfH) : G.worldH / 2;
       G.cam.x += (tx - G.cam.x) * Math.min(1, dt * 7);
       G.cam.y += (ty - G.cam.y) * Math.min(1, dt * 7);
     }
@@ -937,7 +907,9 @@
     drawBackground();
     drawOrbs();
     drawEntities();
+    ART.drawAmbient(ctx, G.scene, G.cam, W, H, G.time);
     drawFx(dt);
+    ART.drawFog(ctx, G.scene, W, H);
     drawVignette();
     updateHud();
 
@@ -966,6 +938,10 @@
   // ---------------------------------------------------------------- buttons
   startBtn.addEventListener("click", function () {
     if (!CONFIG.Players || !CONFIG.Players.length || !CONFIG.Levels || !CONFIG.Levels.length) return;
+    if (window.ART && !ART.isReady()) {
+      ART.load().then(function () { newGame(); });
+      return;
+    }
     newGame();
   });
 
@@ -1002,9 +978,12 @@
   } catch (err) {
     if (window.console) console.error(err);
   }
-  // Optional user-supplied artwork (assets/local/manifest.json). Not shipped
-  // with the repo; see README.
-  if (window.ART && ART.loadLocalPack) ART.loadLocalPack("assets/local/");
+  // 先載入原版美術（地圖／角色／怪物／技能圖示）
+  if (window.ART) {
+    ART.load().then(function () {
+      try { buildMenu(); } catch (err) { if (window.console) console.error(err); }
+    });
+  }
 
   loadConfig();
 })();

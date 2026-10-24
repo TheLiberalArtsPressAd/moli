@@ -4,16 +4,18 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>魔力寶貝幸存者 · Web</title>
-<link rel="stylesheet" href="style.css?v=20251024-9" />
+<link rel="stylesheet" href="style.css?v=20251024-11" />
 </head>
 <body>
 <canvas id="game"></canvas>
 
-<!-- 主選單 -->
-<div id="menu" class="overlay">
-  <div class="panel wide">
-    <h1>魔力寶貝幸存者</h1>
-    <p class="sub">Crossgate Survivors · HTML5 / Godot-ready config</p>
+<!-- 主選單（使用專案原本的主視覺、角色立繪與關卡封面） -->
+<div id="menu" class="overlay menuScreen">
+  <div class="menuBg"></div>
+  <img id="menuHero" class="menuHero" src="web-assets/art/hero_sword.png" alt="" />
+  <div class="menuInner">
+    <img class="menuLogo" src="web-assets/art/logo.png" alt="魔力寶貝幸存者" />
+    <p class="menuSub">Crossgate Survivors · 原版美術網頁版</p>
 
     <div class="section">
       <h2>選擇角色</h2>
@@ -22,7 +24,7 @@
 
     <div class="section">
       <h2>選擇關卡</h2>
-      <div id="levelList" class="cardRow"></div>
+      <div id="levelList" class="cardRow levelRow"></div>
     </div>
 
     <div class="actions">
@@ -79,7 +81,7 @@
   </div>
 </div>
 
-<script src="art.js?v=20251024-9"></script>
-<script src="game.js?v=20251024-9"></script>
+<script src="art.js?v=20251024-11"></script>
+<script src="game.js?v=20251024-11"></script>
 </body>
 </html>

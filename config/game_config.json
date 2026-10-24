@@ -435,6 +435,678 @@
           ]
         }
       ]
+    },
+    {
+      "Name": "樹海",
+      "CoverIndex": 3,
+      "Audio": 210,
+      "Difficulty": 4,
+      "MapWidth": 66,
+      "MapHeight": 66,
+      "Terrain": "deepforest",
+      "PaletIndex": 0,
+      "BorderSerial": 10014,
+      "GroundSerials": [
+        5355,
+        5356,
+        5357
+      ],
+      "DecorationsSerials": [
+        11087,
+        11088,
+        11098
+      ],
+      "UnitSerials": [
+        10015,
+        10016,
+        10017
+      ],
+      "NPCInfos": [],
+      "RoundInfos": [
+        {
+          "Level": 1,
+          "EnemyIDs": [
+            3,
+            4
+          ],
+          "SpawnCountPerEnemy": 10,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            3,
+            4
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 3,
+          "EnemyIDs": [
+            5,
+            7
+          ],
+          "SpawnCountPerEnemy": 12,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            5,
+            7
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 5,
+          "EnemyIDs": [
+            0,
+            2
+          ],
+          "SpawnCountPerEnemy": 14,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            0,
+            2
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 12,
+          "Duration": -1,
+          "EnemyIDs": [],
+          "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            {
+              "EnemyID": 2,
+              "NamePrefix": "樹海霸主·",
+              "Level": 12,
+              "Allies": [
+                3,
+                5,
+                0
+              ],
+              "SpawnPerAlly": 9,
+              "AlliesSpawnInterval": 45,
+              "AlliesSpawnTimes": 12,
+              "Skills": [
+                {
+                  "SkillID": 6,
+                  "Level": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "維諾亞洞窟",
+      "CoverIndex": 4,
+      "Audio": 210,
+      "Difficulty": 5,
+      "MapWidth": 64,
+      "MapHeight": 64,
+      "Terrain": "cave",
+      "PaletIndex": 0,
+      "BorderSerial": 10014,
+      "GroundSerials": [
+        5355,
+        5356,
+        5357
+      ],
+      "DecorationsSerials": [
+        11087,
+        11088
+      ],
+      "UnitSerials": [
+        10015,
+        10016
+      ],
+      "NPCInfos": [],
+      "RoundInfos": [
+        {
+          "Level": 1,
+          "EnemyIDs": [
+            6,
+            7
+          ],
+          "SpawnCountPerEnemy": 12,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            6,
+            7
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 3,
+          "EnemyIDs": [
+            12,
+            13
+          ],
+          "SpawnCountPerEnemy": 14,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            12,
+            13
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 6,
+          "EnemyIDs": [
+            8,
+            9
+          ],
+          "SpawnCountPerEnemy": 12,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            8,
+            9
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 14,
+          "Duration": -1,
+          "EnemyIDs": [],
+          "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            {
+              "EnemyID": 9,
+              "NamePrefix": "洞窟守衛·",
+              "Level": 14,
+              "Allies": [
+                12,
+                13,
+                6
+              ],
+              "SpawnPerAlly": 9,
+              "AlliesSpawnInterval": 45,
+              "AlliesSpawnTimes": 12,
+              "Skills": [
+                {
+                  "SkillID": 8,
+                  "Level": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "索奇亞沙漠",
+      "CoverIndex": 5,
+      "Audio": 210,
+      "Difficulty": 6,
+      "MapWidth": 70,
+      "MapHeight": 70,
+      "Terrain": "desert",
+      "PaletIndex": 0,
+      "BorderSerial": 10014,
+      "GroundSerials": [
+        5355,
+        5356
+      ],
+      "DecorationsSerials": [
+        11087
+      ],
+      "UnitSerials": [
+        10015,
+        10016,
+        10017
+      ],
+      "NPCInfos": [],
+      "RoundInfos": [
+        {
+          "Level": 2,
+          "EnemyIDs": [
+            7,
+            6
+          ],
+          "SpawnCountPerEnemy": 12,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            7,
+            6
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 4,
+          "EnemyIDs": [
+            4,
+            5
+          ],
+          "SpawnCountPerEnemy": 14,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            4,
+            5
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 7,
+          "EnemyIDs": [
+            0,
+            1
+          ],
+          "SpawnCountPerEnemy": 15,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            0,
+            1
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 16,
+          "Duration": -1,
+          "EnemyIDs": [],
+          "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            {
+              "EnemyID": 10,
+              "NamePrefix": "沙漠魔獸·",
+              "Level": 16,
+              "Allies": [
+                7,
+                4,
+                1
+              ],
+              "SpawnPerAlly": 9,
+              "AlliesSpawnInterval": 45,
+              "AlliesSpawnTimes": 12,
+              "Skills": [
+                {
+                  "SkillID": 10,
+                  "Level": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "冰封雪山",
+      "CoverIndex": 6,
+      "Audio": 210,
+      "Difficulty": 7,
+      "MapWidth": 68,
+      "MapHeight": 68,
+      "Terrain": "snow",
+      "PaletIndex": 0,
+      "BorderSerial": 10014,
+      "GroundSerials": [
+        5355,
+        5356
+      ],
+      "DecorationsSerials": [
+        11087,
+        11098
+      ],
+      "UnitSerials": [
+        10015,
+        10016
+      ],
+      "NPCInfos": [],
+      "RoundInfos": [
+        {
+          "Level": 2,
+          "EnemyIDs": [
+            5,
+            4
+          ],
+          "SpawnCountPerEnemy": 14,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            5,
+            4
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 4,
+          "EnemyIDs": [
+            13,
+            12
+          ],
+          "SpawnCountPerEnemy": 16,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            13,
+            12
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 8,
+          "EnemyIDs": [
+            2,
+            8
+          ],
+          "SpawnCountPerEnemy": 14,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            2,
+            8
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 18,
+          "Duration": -1,
+          "EnemyIDs": [],
+          "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            {
+              "EnemyID": 9,
+              "NamePrefix": "雪山巨像·",
+              "Level": 18,
+              "Allies": [
+                13,
+                5,
+                2
+              ],
+              "SpawnPerAlly": 9,
+              "AlliesSpawnInterval": 45,
+              "AlliesSpawnTimes": 12,
+              "Skills": [
+                {
+                  "SkillID": 12,
+                  "Level": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "炎之洞窟",
+      "CoverIndex": 7,
+      "Audio": 210,
+      "Difficulty": 8,
+      "MapWidth": 66,
+      "MapHeight": 66,
+      "Terrain": "volcano",
+      "PaletIndex": 0,
+      "BorderSerial": 10014,
+      "GroundSerials": [
+        5355,
+        5356
+      ],
+      "DecorationsSerials": [
+        11087
+      ],
+      "UnitSerials": [
+        10015,
+        10016,
+        10017
+      ],
+      "NPCInfos": [],
+      "RoundInfos": [
+        {
+          "Level": 3,
+          "EnemyIDs": [
+            6,
+            3
+          ],
+          "SpawnCountPerEnemy": 14,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            6,
+            3
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 5,
+          "EnemyIDs": [
+            1,
+            0
+          ],
+          "SpawnCountPerEnemy": 16,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            1,
+            0
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 9,
+          "EnemyIDs": [
+            10,
+            11
+          ],
+          "SpawnCountPerEnemy": 14,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            10,
+            11
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 20,
+          "Duration": -1,
+          "EnemyIDs": [],
+          "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            {
+              "EnemyID": 3,
+              "NamePrefix": "炎獄魔君·",
+              "Level": 20,
+              "Allies": [
+                6,
+                1,
+                10
+              ],
+              "SpawnPerAlly": 9,
+              "AlliesSpawnInterval": 45,
+              "AlliesSpawnTimes": 12,
+              "Skills": [
+                {
+                  "SkillID": 14,
+                  "Level": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "靈堂",
+      "CoverIndex": 8,
+      "Audio": 210,
+      "Difficulty": 9,
+      "MapWidth": 64,
+      "MapHeight": 64,
+      "Terrain": "graveyard",
+      "PaletIndex": 0,
+      "BorderSerial": 10014,
+      "GroundSerials": [
+        5355,
+        5356
+      ],
+      "DecorationsSerials": [
+        11087,
+        11099
+      ],
+      "UnitSerials": [
+        10015,
+        10016
+      ],
+      "NPCInfos": [],
+      "RoundInfos": [
+        {
+          "Level": 3,
+          "EnemyIDs": [
+            8,
+            11
+          ],
+          "SpawnCountPerEnemy": 15,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            8,
+            11
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 6,
+          "EnemyIDs": [
+            12,
+            13,
+            11
+          ],
+          "SpawnCountPerEnemy": 14,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            12,
+            13,
+            11
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 10,
+          "EnemyIDs": [
+            9,
+            8
+          ],
+          "SpawnCountPerEnemy": 14,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            9,
+            8
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 22,
+          "Duration": -1,
+          "EnemyIDs": [],
+          "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            {
+              "EnemyID": 8,
+              "NamePrefix": "亡靈領主·",
+              "Level": 22,
+              "Allies": [
+                8,
+                11,
+                12
+              ],
+              "SpawnPerAlly": 9,
+              "AlliesSpawnInterval": 45,
+              "AlliesSpawnTimes": 12,
+              "Skills": [
+                {
+                  "SkillID": 16,
+                  "Level": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "海底洞窟",
+      "CoverIndex": 9,
+      "Audio": 210,
+      "Difficulty": 10,
+      "MapWidth": 72,
+      "MapHeight": 72,
+      "Terrain": "underwater",
+      "PaletIndex": 0,
+      "BorderSerial": 10014,
+      "GroundSerials": [
+        5355,
+        5356
+      ],
+      "DecorationsSerials": [
+        11087,
+        11100
+      ],
+      "UnitSerials": [
+        10015,
+        10016,
+        10017
+      ],
+      "NPCInfos": [],
+      "RoundInfos": [
+        {
+          "Level": 4,
+          "EnemyIDs": [
+            5,
+            13
+          ],
+          "SpawnCountPerEnemy": 15,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            5,
+            13
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 7,
+          "EnemyIDs": [
+            4,
+            12
+          ],
+          "SpawnCountPerEnemy": 16,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            4,
+            12
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 11,
+          "EnemyIDs": [
+            10,
+            9
+          ],
+          "SpawnCountPerEnemy": 14,
+          "Duration": 60,
+          "ExtraDisturbEnemyIDs": [
+            10,
+            9
+          ],
+          "BossInfos": []
+        },
+        {
+          "Level": 25,
+          "Duration": -1,
+          "EnemyIDs": [],
+          "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            {
+              "EnemyID": 10,
+              "NamePrefix": "深海霸主·",
+              "Level": 25,
+              "Allies": [
+                5,
+                13,
+                10
+              ],
+              "SpawnPerAlly": 9,
+              "AlliesSpawnInterval": 45,
+              "AlliesSpawnTimes": 12,
+              "Skills": [
+                {
+                  "SkillID": 18,
+                  "Level": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }

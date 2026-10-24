@@ -17,8 +17,11 @@ Unity C# 專案（Unity 2021.3.30f1），另外附一份純 HTML5 網頁版。
 | 路徑 | 用途 |
 | --- | --- |
 | `index.html` / `game.js` / `style.css` | 網頁版遊戲 |
-| `art.js` | 網頁版美術層（2:1 等角地圖、角色、怪物、場景物件） |
-| `Tools/art-gallery.html` | 美術預覽頁，可看所有角色 / 怪物 / 場景圖 |
+| `art.js` | 網頁版美術層（俯視角、原版地圖 + 各關卡色調、角色、怪物、場景物件） |
+| `web-assets/art/` | 網頁版使用的美術素材（由 `Tools/build-web-assets.ps1` 從 `Assets/` 產生） |
+| `Tools/build-web-assets.ps1` | 從專案原本的美術檔產生 `web-assets/art/` |
+| `Tools/monster-preview.html` | 怪物美術預覽頁 |
+| `Tools/biome-preview.html` | 十個關卡的景色預覽頁 |
 | `admin.html` / `admin.js` | 網頁版數據後台（讀寫 `config/game_config.json`） |
 | `config/game_config.json` | 網頁版與工具共用的設定檔 |
 | `Assets/` / `Packages/` / `ProjectSettings/` | Unity 專案 |
@@ -54,31 +57,43 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
 
 ## 網頁版美術
 
-- 網頁版改成 **2:1 等角（斜角）視角**，地磚 64×32，和《魔力寶貝》的呈現方式一致。
-- 地圖會依關卡自動產生：`芙蕾雅島` 是海島（草地、沙灘、海、城鎮廣場、道路、房屋），
-  `哥布林森林` 是森林空地，`史萊姆洞窟` 是洞窟（石地、岩壁、蘑菇）。
-- 所有圖形都由 `art.js` 以程式繪製（原創素材），**不含任何原始遊戲檔案**。
-- 想換成自己的素材：在專案根目錄建立 `assets/local/`（已列入 `.gitignore`，不會被推上 GitHub），
-  放入 `manifest.json`：
+網頁版直接用**專案裡原本的美術檔**，和 Unity 版一致：
 
-  ```json
-  {
-    "actors": { "hero_sword": "actors/hero_sword.png", "goblin": "actors/goblin.png" },
-    "tiles":  { "grass": "tiles/grass.png" },
-    "props":  { "tree": "props/tree.png" }
-  }
+| 遊戲內用途 | 來源 |
+| --- | --- |
+| 主選單背景 | `Assets/Textures/Main_BG.png` |
+| 主選單標題 | `Assets/Textures/Main_Logo.png` |
+| 角色立繪 | `Assets/Textures/Main_Sword.png`、`Main_Bow.png` |
+| 角色卡 / 關卡卡框 | `Assets/Textures/userSelector.png`、`LevelSelector.png` |
+| 關卡封面 | `Assets/Textures/LevelCover.png`（前兩關） |
+| 戰場地圖 | `Assets/Temp/位图.png`（已去掉「角色選擇 / 關卡選擇」字樣） |
+| 樹木 | `Assets/Temp/7813.png` |
+| 主角 | `Assets/Temp/105400.gif` |
+| 哥布林 / 紅帽哥布林 | `Assets/Textures/enemy.gif` |
+| 技能圖示 | `Assets/Resources/SkillIcons/*.png` |
+| 技能特效 | `Assets/Resources/BattleSkills/*/` |
+
+- 視角是**俯視角**（和 Unity 版一樣），不是斜角。
+- 每個關卡都用同一張原版地圖，加上不同色調分級與環境效果做出不同景色：
+  森林、海島、樹海、洞窟、沙漠、雪山、火山、靈堂、海底。
+- 原版怪物圖只有哥布林一張，其餘怪物（蝙蝠、蜜蜂、老鼠、蜘蛛、史萊姆、喪屍、
+  石魔像、樹精、使魔）由 `art.js` 以同風格的像素圖補齊。
+- 重新產生素材（換了 `Assets/` 裡的圖之後）：
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File Tools\build-web-assets.ps1
   ```
 
-  圖片以「底部置中」對齊地面；角色圖建議 96×112（透明背景）。沒有 manifest 時就用內建程式繪製的圖。
-- 美術預覽：本機開 `http://localhost:8080/Tools/art-gallery.html`。
+- 美術預覽：`Tools/monster-preview.html`（怪物）、`Tools/biome-preview.html`（十關景色）。
 
 ## 網頁版除錯參數
 
 | 參數 | 作用 |
 | --- | --- |
 | `?autostart=1` | 跳過選單直接開始 |
-| `?autostart=1&level=2` | 直接指定關卡（0 哥布林森林、1 史萊姆洞窟、2 芙蕾雅島） |
+| `?autostart=1&level=2` | 直接指定關卡（0 哥布林森林、1 史萊姆洞窟、2 芙蕾雅島、3 樹海、4 維諾亞洞窟、5 索奇亞沙漠、6 冰封雪山、7 炎之洞窟、8 靈堂、9 海底洞窟） |
 | `?autostart=1&player=1` | 直接指定角色（0 劍士、1 弓箭手） |
+| `?showcase=1` | 在角色周圍排出全部 14 種怪物（純美術預覽，戰鬥暫停） |
 
 
 ## 場景

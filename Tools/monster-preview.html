@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>怪物美術預覽</title>
+<style>
+  body { margin: 0; background: #1b2a17; color: #e8eefc; font-family: "Microsoft JhengHei", sans-serif; }
+  h1 { font-size: 16px; padding: 14px 18px; margin: 0; background: #10160e; }
+  #grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px; }
+  .cell { width: 150px; background: rgba(0,0,0,0.25); border: 1px solid #2f4429; border-radius: 8px; padding: 8px; text-align: center; }
+  .cell canvas { width: 120px; height: 120px; image-rendering: pixelated; }
+  .cell div { font-size: 12px; color: #b9c7de; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>怪物美術預覽（哥布林為原版 sprite，其餘為同風格像素圖）</h1>
+<div id="grid"></div>
+<script src="../art.js"></script>
+<script>
+  ART.load().then(function () {
+    var grid = document.getElementById("grid");
+    for (var id = 0; id < 14; id++) {
+      var cell = document.createElement("div");
+      cell.className = "cell";
+      var cv = document.createElement("canvas");
+      cv.width = 128; cv.height = 128;
+      cell.appendChild(cv);
+      var label = document.createElement("div");
+      label.textContent = "#" + id;
+      cell.appendChild(label);
+      grid.appendChild(cell);
+
+      var g = cv.getContext("2d");
+      g.fillStyle = "#3f6b2a";
+      g.fillRect(0, 0, 128, 128);
+      ART.drawEnemy(g, { id: id, x: 0, y: 0, hitFlash: 0 }, 64, 120, 0, 2.4);
+    }
+  });
+</script>
+</body>
+</html>
