@@ -133,6 +133,20 @@
         : "未找到 config/game_config.json，使用內建預設設定。";
     }
     buildMenu();
+
+    // Deep link used for local previews / smoke tests:
+    //   index.html?autostart=1&level=2&player=1
+    try {
+      var q = (window.location && window.location.search) || "";
+      if (q.indexOf("autostart") >= 0 && !G) {
+        var ml = /[?&]level=(\d+)/.exec(q);
+        if (ml) selectedLevel = clamp(parseInt(ml[1], 10), 0, CONFIG.Levels.length - 1);
+        var mp = /[?&]player=(\d+)/.exec(q);
+        if (mp) selectedPlayer = clamp(parseInt(mp[1], 10), 0, CONFIG.Players.length - 1);
+        buildMenu();
+        setTimeout(function () { try { newGame(); } catch (e) { if (window.console) console.error(e); } }, 250);
+      }
+    } catch (e) {}
   }
 
   // ---------------------------------------------------------------- menu
@@ -208,6 +222,13 @@
   }
   window.addEventListener("resize", resize);
 
+  function levelTerrainKind(lv) {
+    var n = (lv.Name || "") + " " + (lv.Terrain || "");
+    if (/洞窟|洞穴|迷宮|地下|坑道|遺跡/.test(n)) return "cave";
+    if (/森林|林|平原|草原/.test(n)) return "forest";
+    return "island";
+  }
+
   function newGame() {
     var pi = clamp(selectedPlayer, 0, CONFIG.Players.length - 1);
     var li = clamp(selectedLevel, 0, CONFIG.Levels.length - 1);
@@ -218,9 +239,19 @@
     var worldW = Math.max(20, num(lv.MapWidth, 50)) * TILE;
     var worldH = Math.max(20, num(lv.MapHeight, 50)) * TILE;
 
+    var terrain = null;
+    if (window.ART) {
+      terrain = ART.buildTerrain(lv, levelTerrainKind(lv));
+      worldW = terrain.cols * TILE;
+      worldH = terrain.rows * TILE;
+    }
+
     var player = {
       x: worldW / 2,
       y: worldH / 2,
+      vx: 0, vy: 0,
+      artKey: num(pInfo.ATKSkill, 0) === 1 ? "hero_bow" : "hero_sword",
+      artScale: 0.72,
       r: 15,
       face: 1,
       hp: 0, maxhp: 0,
@@ -263,6 +294,7 @@
       victory: false,
       playerInfo: pInfo,
       level: lv,
+      terrain: terrain,
       grow: {
         HP: num(grow.HP, 0.06),
         MP: num(grow.MP, 0.02),
@@ -446,26 +478,33 @@
 
   function updatePlayer(dt) {
     var p = G.player;
-    var mx = 0, my = 0;
-    if (keys["a"] || keys["arrowleft"]) mx -= 1;
-    if (keys["d"] || keys["arrowright"]) mx += 1;
-    if (keys["w"] || keys["arrowup"]) my -= 1;
-    if (keys["s"] || keys["arrowdown"]) my += 1;
+    var ix = 0, iy = 0;
+    if (keys["a"] || keys["arrowleft"]) ix -= 1;
+    if (keys["d"] || keys["arrowright"]) ix += 1;
+    if (keys["w"] || keys["arrowup"]) iy -= 1;
+    if (keys["s"] || keys["arrowdown"]) iy += 1;
 
-    if (!mx && !my && pointer.active) {
-      var wx = pointer.x + G.cam.x - W / 2;
-      var wy = pointer.y + G.cam.y - H / 2;
-      var dx = wx - p.x, dy = wy - p.y;
-      var d = Math.hypot(dx, dy);
-      if (d > 12) { mx = dx / d; my = dy / d; }
+    // screen space -> world space (2:1 isometric): x = sx/2 + sy, y = sy - sx/2
+    var mx = ix * 0.5 + iy;
+    var my = iy - ix * 0.5;
+
+    if (!ix && !iy && pointer.active) {
+      var sdx = pointer.x - W / 2, sdy = pointer.y - H / 2;
+      var wdx = sdx * 0.5 + sdy, wdy = sdy - sdx * 0.5;
+      var d = Math.hypot(wdx, wdy);
+      if (d > 12) { mx = wdx / d; my = wdy / d; }
+      else { mx = 0; my = 0; }
     }
 
     var len = Math.hypot(mx, my);
     if (len > 0) {
       mx /= len; my /= len;
-      p.x = clamp(p.x + mx * p.spd * dt, p.r, G.worldW - p.r);
-      p.y = clamp(p.y + my * p.spd * dt, p.r, G.worldH - p.r);
-      if (Math.abs(mx) > 0.05) p.face = mx > 0 ? 1 : -1;
+      p.vx = mx * p.spd; p.vy = my * p.spd;
+      p.x = clamp(p.x + p.vx * dt, p.r, G.worldW - p.r);
+      p.y = clamp(p.y + p.vy * dt, p.r, G.worldH - p.r);
+      if (Math.abs(mx - my) > 0.05) p.face = (mx - my) > 0 ? 1 : -1;
+    } else {
+      p.vx = 0; p.vy = 0;
     }
 
     p.hitFlash = Math.max(0, p.hitFlash - dt);
@@ -631,12 +670,43 @@
   }
 
   // ---------------------------------------------------------------- render
+  var ENEMY_ART_BY_ID = {
+    0: "goblin", 1: "goblin_red", 2: "treant", 3: "imp", 4: "bat_big", 5: "bat",
+    6: "bee", 7: "rat", 8: "zombie", 9: "golem", 10: "bat_big", 11: "spider",
+    12: "slime", 13: "slime_blue"
+  };
+
+  var ACTOR_SCALE = {
+    goblin: 0.68, goblin_red: 0.68, treant: 0.9, imp: 0.6, bat: 0.55, bat_big: 0.78,
+    bee: 0.5, rat: 0.52, zombie: 0.68, golem: 0.95, spider: 0.55, slime: 0.55, slime_blue: 0.55
+  };
+
+  function actorKeyForEnemy(e) {
+    var n = e.name || "";
+    if (n.indexOf("紅帽") >= 0) return "goblin_red";
+    if (n.indexOf("哥布林") >= 0) return "goblin";
+    if (n.indexOf("樹精") >= 0) return "treant";
+    if (n.indexOf("使魔") >= 0) return "imp";
+    if (n.indexOf("大蝙蝠") >= 0) return "bat_big";
+    if (n.indexOf("蝙蝠") >= 0) return "bat";
+    if (n.indexOf("蜜蜂") >= 0) return "bee";
+    if (n.indexOf("老鼠") >= 0) return "rat";
+    if (n.indexOf("喪屍") >= 0) return "zombie";
+    if (n.indexOf("魔像") >= 0) return "golem";
+    if (n.indexOf("蜘蛛") >= 0) return "spider";
+    if (n.indexOf("史萊姆") >= 0) return n.indexOf("藍") >= 0 ? "slime_blue" : "slime";
+    return ENEMY_ART_BY_ID[e.id] || "goblin";
+  }
+
   function drawBackground() {
+    if (G.terrain && window.ART) {
+      ART.drawGround(ctx, G.terrain, G.cam, W, H, G.time);
+      return;
+    }
     var cam = G.cam;
     var ox = cam.x - W / 2, oy = cam.y - H / 2;
     ctx.fillStyle = "#12161f";
     ctx.fillRect(0, 0, W, H);
-
     var x0 = Math.floor(ox / TILE) - 1, x1 = Math.ceil((ox + W) / TILE) + 1;
     var y0 = Math.floor(oy / TILE) - 1, y1 = Math.ceil((oy + H) / TILE) + 1;
     for (var gx = x0; gx <= x1; gx++) {
@@ -648,92 +718,110 @@
         ctx.fillRect(sx, sy, TILE, TILE);
       }
     }
-
-    ctx.strokeStyle = "rgba(90,120,170,0.35)";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(-ox, -oy, G.worldW, G.worldH);
   }
 
-  function drawPlayer() {
+  // Draw props, enemies and the player back-to-front so overlaps look right.
+  function drawEntities() {
     var p = G.player;
-    var sx = p.x - G.cam.x + W / 2;
-    var sy = p.y - G.cam.y + H / 2;
+    var items = [];
+    var i, s;
 
-    ctx.beginPath();
-    ctx.arc(sx, sy + 6, p.r * 0.95, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fill();
+    if (G.terrain && window.ART) {
+      var props = G.terrain.props;
+      for (i = 0; i < props.length; i++) {
+        var pr = props[i];
+        s = ART.toScreen(pr.x, pr.y, G.cam, W, H);
+        if (s.x < -180 || s.x > W + 180 || s.y < -220 || s.y > H + 200) continue;
+        items.push({ d: pr.x + pr.y, kind: 0, o: pr, sx: s.x, sy: s.y });
+      }
+    }
 
-    ctx.beginPath();
-    ctx.arc(sx, sy, p.r, 0, Math.PI * 2);
-    ctx.fillStyle = p.hitFlash > 0 ? "#ffffff" : "#5ad1ff";
-    ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#0c2a3a";
-    ctx.stroke();
+    for (i = 0; i < G.enemies.length; i++) {
+      var e = G.enemies[i];
+      s = ART.toScreen(e.x, e.y, G.cam, W, H);
+      if (s.x < -120 || s.x > W + 120 || s.y < -160 || s.y > H + 160) continue;
+      items.push({ d: e.x + e.y, kind: 1, o: e, sx: s.x, sy: s.y });
+    }
 
-    // weapon indicator
-    ctx.beginPath();
-    ctx.moveTo(sx + p.face * (p.r - 2), sy - 4);
-    ctx.lineTo(sx + p.face * (p.r + 12), sy);
-    ctx.lineTo(sx + p.face * (p.r - 2), sy + 4);
-    ctx.closePath();
-    ctx.fillStyle = "#ffe08a";
-    ctx.fill();
+    s = ART.toScreen(p.x, p.y, G.cam, W, H);
+    items.push({ d: p.x + p.y, kind: 2, o: p, sx: s.x, sy: s.y });
 
-    // hp ring
-    ctx.beginPath();
-    ctx.arc(sx, sy, p.r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (p.hp / p.maxhp));
-    ctx.strokeStyle = "#ff6b6b";
-    ctx.lineWidth = 4;
-    ctx.stroke();
+    items.sort(function (a, b) { return a.d - b.d; });
 
-    ctx.font = "11px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillStyle = "rgba(230,240,255,0.85)";
-    ctx.fillText(G.playerName + " Lv." + p.level, sx, sy - p.r - 12);
+    for (i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it.kind === 0) {
+        ART.drawProp(ctx, it.o, it.sx, it.sy);
+      } else if (it.kind === 1) {
+        drawOneEnemy(it.o, it.sx, it.sy);
+      } else {
+        drawOnePlayer(it.o, it.sx, it.sy);
+      }
+    }
   }
 
-  function drawEnemies() {
-    for (var i = 0; i < G.enemies.length; i++) {
-      var e = G.enemies[i];
-      var sx = e.x - G.cam.x + W / 2;
-      var sy = e.y - G.cam.y + H / 2;
-      if (sx < -80 || sy < -80 || sx > W + 80 || sy > H + 80) continue;
+  function drawOnePlayer(p, sx, sy) {
+    var ky = p.artKey || "hero_sword";
+    var sc = p.artScale || 0.72;
+    var bob = Math.sin(G.time * 9) * (Math.abs(p.vx || 0) + Math.abs(p.vy || 0) > 6 ? 1.6 : 0.5);
 
-      ctx.beginPath();
-      ctx.ellipse(sx, sy + e.r * 0.7, e.r * 0.9, e.r * 0.35, 0, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(0,0,0,0.3)";
-      ctx.fill();
+    if (ART.hasOverride("actors", ky)) {
+      var img = ART.override("actors", ky);
+      ctx.drawImage(img, sx - img.width * sc / 2, sy - img.height * sc, img.width * sc, img.height * sc);
+    } else {
+      ART.drawActor(ctx, ky, sx, sy + 2, { scale: sc, flash: p.hitFlash > 0, bob: bob });
+    }
 
-      ctx.beginPath();
-      ctx.arc(sx, sy, e.r, 0, Math.PI * 2);
-      var hue = (e.id * 47) % 360;
-      ctx.fillStyle = e.hitFlash > 0 ? "#ffffff" : (e.isBoss ? "#ff8a4c" : "hsl(" + hue + ",45%,52%)");
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = e.isBoss ? "#ffd9a8" : "rgba(0,0,0,0.4)";
-      ctx.stroke();
+    // compact hp bar above the head
+    var bw = 46, hpr = clamp(p.hp / p.maxhp, 0, 1);
+    var by = sy - 52 * sc;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(sx - bw / 2, by, bw, 4);
+    ctx.fillStyle = "#6ee7a8";
+    ctx.fillRect(sx - bw / 2, by, bw * hpr, 4);
 
-      var w = e.r * 2.2, hpr = clamp(e.hp / e.maxhp, 0, 1);
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.fillRect(sx - w / 2, sy - e.r - 11, w, 4);
-      ctx.fillStyle = hpr > 0.5 ? "#6ee7a8" : (hpr > 0.22 ? "#ffd166" : "#ff6b6b");
-      ctx.fillRect(sx - w / 2, sy - e.r - 11, w * hpr, 4);
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(240,246,255,0.92)";
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.lineWidth = 3;
+    var label = G.playerName + " Lv." + p.level;
+    ctx.strokeText(label, sx, by - 6);
+    ctx.fillText(label, sx, by - 6);
+  }
 
-      if (e.isBoss) {
-        ctx.font = "12px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillStyle = "#ffd9a8";
-        ctx.fillText(e.name + " Lv." + Math.round(e.hp) + "/" + Math.round(e.maxhp), sx, sy - e.r - 18);
-      }
+  function drawOneEnemy(e, sx, sy) {
+    var ky = e.artKey || actorKeyForEnemy(e);
+    var sc = e.isBoss ? 1.05 : (e.artScale || ACTOR_SCALE[ky] || 0.62);
+    var bob = Math.sin(G.time * 8 + e.x * 0.05) * 1.3;
+
+    if (ART.hasOverride("actors", ky)) {
+      var img = ART.override("actors", ky);
+      ctx.drawImage(img, sx - img.width * sc / 2, sy - img.height * sc, img.width * sc, img.height * sc);
+    } else {
+      ART.drawActor(ctx, ky, sx, sy + 2, { scale: sc, flash: e.hitFlash > 0, bob: bob });
+    }
+
+    var w = 34 * sc + 14, hpr = clamp(e.hp / e.maxhp, 0, 1);
+    var barY = sy - 66 * sc;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(sx - w / 2, barY, w, 4);
+    ctx.fillStyle = hpr > 0.5 ? "#6ee7a8" : (hpr > 0.22 ? "#ffd166" : "#ff6b6b");
+    ctx.fillRect(sx - w / 2, barY, w * hpr, 4);
+
+    if (e.isBoss) {
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#ffd9a8";
+      ctx.fillText(e.name + " Lv." + Math.round(e.hp) + "/" + Math.round(e.maxhp), sx, barY - 6);
     }
   }
 
   function drawOrbs() {
     for (var i = 0; i < G.orbs.length; i++) {
       var o = G.orbs[i];
-      var sx = o.x - G.cam.x + W / 2, sy = o.y - G.cam.y + H / 2;
+      var sp = ART.toScreen(o.x, o.y, G.cam, W, H);
+      var sx = sp.x, sy = sp.y;
       ctx.save();
       ctx.translate(sx, sy);
       ctx.rotate(Math.PI / 4);
@@ -750,7 +838,8 @@
       var f = G.fx[i];
       f.t -= dt;
       if (f.t <= 0) { G.fx.splice(i, 1); continue; }
-      var sx = f.x - G.cam.x + W / 2, sy = f.y - G.cam.y + H / 2;
+      var spf = ART.toScreen(f.x, f.y, G.cam, W, H);
+      var sx = spf.x, sy = spf.y;
       if (f.type === "ring") {
         var k = 1 - f.t / 0.45;
         ctx.beginPath();
@@ -776,7 +865,8 @@
       t.t -= dt;
       t.y -= 34 * dt;
       if (t.t <= 0) { G.floaters.splice(j, 1); continue; }
-      var fx = t.x - G.cam.x + W / 2, fy = t.y - G.cam.y + H / 2;
+      var sp2 = ART.toScreen(t.x, t.y, G.cam, W, H);
+      var fx = sp2.x, fy = sp2.y;
       ctx.globalAlpha = clamp(t.t / 0.7, 0, 1);
       ctx.font = "bold 13px sans-serif";
       ctx.textAlign = "center";
@@ -837,17 +927,16 @@
       updateEnemies(dt);
       updateWaves(dt);
 
-      // camera lerp
-      var tx = clamp(G.player.x, W / 2, Math.max(W / 2, G.worldW - W / 2));
-      var ty = clamp(G.player.y, H / 2, Math.max(H / 2, G.worldH - H / 2));
+      // camera lerp (clamp to world, not to screen size: the view is isometric)
+      var tx = clamp(G.player.x, TILE * 2, Math.max(TILE * 2, G.worldW - TILE * 2));
+      var ty = clamp(G.player.y, TILE * 2, Math.max(TILE * 2, G.worldH - TILE * 2));
       G.cam.x += (tx - G.cam.x) * Math.min(1, dt * 7);
       G.cam.y += (ty - G.cam.y) * Math.min(1, dt * 7);
     }
 
     drawBackground();
     drawOrbs();
-    drawEnemies();
-    drawPlayer();
+    drawEntities();
     drawFx(dt);
     drawVignette();
     updateHud();
@@ -913,5 +1002,9 @@
   } catch (err) {
     if (window.console) console.error(err);
   }
+  // Optional user-supplied artwork (assets/local/manifest.json). Not shipped
+  // with the repo; see README.
+  if (window.ART && ART.loadLocalPack) ART.loadLocalPack("assets/local/");
+
   loadConfig();
 })();

@@ -409,6 +409,32 @@
           ]
         }
       ]
+    },
+    {
+      "Name": "芙蕾雅島",
+      "CoverIndex": 2,
+      "Audio": 210,
+      "Difficulty": 3,
+      "MapWidth": 60,
+      "MapHeight": 60,
+      "Terrain": "island",
+      "PaletIndex": 0,
+      "BorderSerial": 10014,
+      "GroundSerials": [5355, 5356, 5357],
+      "DecorationsSerials": [11087, 11088],
+      "UnitSerials": [10015, 10016, 10017],
+      "NPCInfos": [{ "Type": 0, "Serial": 14510 }],
+      "RoundInfos": [
+        { "Level": 1, "EnemyIDs": [3, 4], "SpawnCountPerEnemy": 10, "Duration": 60, "BossInfos": [] },
+        { "Level": 3, "EnemyIDs": [0, 1], "SpawnCountPerEnemy": 12, "Duration": 60, "BossInfos": [] },
+        { "Level": 5, "EnemyIDs": [6, 7, 5], "SpawnCountPerEnemy": 12, "Duration": 60, "BossInfos": [] },
+        {
+          "Level": 8, "Duration": -1, "EnemyIDs": [], "SpawnCountPerEnemy": 0,
+          "BossInfos": [
+            { "EnemyID": 10, "NamePrefix": "島之主·", "Level": 10, "Allies": [4, 5, 0], "SpawnPerAlly": 8, "AlliesSpawnInterval": 50, "AlliesSpawnTimes": 10, "Skills": [{ "SkillID": 14, "Level": 1 }] }
+          ]
+        }
+      ]
     }
   ]
 }

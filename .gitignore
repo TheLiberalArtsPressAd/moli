@@ -2,6 +2,9 @@
 .idea
 /bin
 
+# 使用者自行匯出的美術素材（不隨專案散布）
+/assets/local/
+
 # This .gitignore file should be placed at the root of your Unity project directory
 #
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore

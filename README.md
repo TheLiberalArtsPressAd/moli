@@ -17,6 +17,8 @@ Unity C# 專案（Unity 2021.3.30f1），另外附一份純 HTML5 網頁版。
 | 路徑 | 用途 |
 | --- | --- |
 | `index.html` / `game.js` / `style.css` | 網頁版遊戲 |
+| `art.js` | 網頁版美術層（2:1 等角地圖、角色、怪物、場景物件） |
+| `Tools/art-gallery.html` | 美術預覽頁，可看所有角色 / 怪物 / 場景圖 |
 | `admin.html` / `admin.js` | 網頁版數據後台（讀寫 `config/game_config.json`） |
 | `config/game_config.json` | 網頁版與工具共用的設定檔 |
 | `Assets/` / `Packages/` / `ProjectSettings/` | Unity 專案 |
@@ -49,6 +51,35 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
 ## 遊戲資源
 
 請自行將魔力寶貝遊戲資源放於專案根目錄 `bin/` 資料夾，本專案不提供資源檔。
+
+## 網頁版美術
+
+- 網頁版改成 **2:1 等角（斜角）視角**，地磚 64×32，和《魔力寶貝》的呈現方式一致。
+- 地圖會依關卡自動產生：`芙蕾雅島` 是海島（草地、沙灘、海、城鎮廣場、道路、房屋），
+  `哥布林森林` 是森林空地，`史萊姆洞窟` 是洞窟（石地、岩壁、蘑菇）。
+- 所有圖形都由 `art.js` 以程式繪製（原創素材），**不含任何原始遊戲檔案**。
+- 想換成自己的素材：在專案根目錄建立 `assets/local/`（已列入 `.gitignore`，不會被推上 GitHub），
+  放入 `manifest.json`：
+
+  ```json
+  {
+    "actors": { "hero_sword": "actors/hero_sword.png", "goblin": "actors/goblin.png" },
+    "tiles":  { "grass": "tiles/grass.png" },
+    "props":  { "tree": "props/tree.png" }
+  }
+  ```
+
+  圖片以「底部置中」對齊地面；角色圖建議 96×112（透明背景）。沒有 manifest 時就用內建程式繪製的圖。
+- 美術預覽：本機開 `http://localhost:8080/Tools/art-gallery.html`。
+
+## 網頁版除錯參數
+
+| 參數 | 作用 |
+| --- | --- |
+| `?autostart=1` | 跳過選單直接開始 |
+| `?autostart=1&level=2` | 直接指定關卡（0 哥布林森林、1 史萊姆洞窟、2 芙蕾雅島） |
+| `?autostart=1&player=1` | 直接指定角色（0 劍士、1 弓箭手） |
+
 
 ## 場景
 
