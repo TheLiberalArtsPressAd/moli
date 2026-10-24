@@ -1,5 +1,5 @@
 /* Crossgate Survivors - HTML5 web version
- * Reads docs/config/game_config.json (same schema as Unity/Godot data).
+ * Reads config/game_config.json (same schema as Unity/Godot data).
  * No build step required: GitHub Pages serves this folder directly.
  */
 (function () {

@@ -63,7 +63,7 @@
     if (draft) {
       cfg = draft;
       status.textContent = "已載入草稿（自動儲存）";
-      hint.textContent = "變更會自動暫存至 localStorage。下載 JSON 後替換 docs/config/game_config.json 並提交推送即生效。";
+      hint.textContent = "變更會自動暫存至 localStorage。下載 JSON 後替換 config/game_config.json 並提交推送即生效。";
       render();
       return;
     }
@@ -73,10 +73,10 @@
     }).then(function (data) {
       cfg = data;
       status.textContent = "已載入倉庫設定檔";
-      hint.textContent = "編輯全部欄位後點「下載 game_config.json」→ 覆蓋 docs/config/game_config.json 後 commit push。也可上傳至後台自訂流程。";
+      hint.textContent = "編輯全部欄位後點「下載 game_config.json」→ 覆蓋 config/game_config.json 後 commit push。也可上傳至後台自訂流程。";
       render();
     }).catch(function () {
-      status.textContent = "載入失敗，請確認 docs/config/game_config.json 存在";
+      status.textContent = "載入失敗，請確認 config/game_config.json 存在";
     });
   }
 
