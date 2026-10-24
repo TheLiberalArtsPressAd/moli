@@ -110,10 +110,10 @@
       fog: "rgba(200,225,245,0.22)"
     },
     desert: {
-      filter: "brightness(1.35) saturate(0.6) hue-rotate(-28deg)",
-      overlay: "rgba(232,198,120,0.42)",
+      filter: "brightness(1.42) saturate(0.34) hue-rotate(-52deg)",
+      overlay: "rgba(238,205,135,0.52)",
       blend: "overlay",
-      trees: 8, treeTint: "brightness(1.05) saturate(0.45) hue-rotate(-25deg)",
+      trees: 8, treeTint: "brightness(1.0) saturate(0.35) hue-rotate(-45deg)",
       ambient: "sand", ambientColor: "rgba(240,220,160,0.55)", ambientCount: 60,
       fog: "rgba(210,170,90,0.2)"
     },
