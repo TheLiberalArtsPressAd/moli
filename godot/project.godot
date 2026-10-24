@@ -1,0 +1,26 @@
+﻿config_version=5
+
+[application]
+
+config/name=\"Moli Survivors\"
+run/main_scene=\"res://scenes/ui/MainMenu.tscn\"
+config/features=PackedStringArray(\"4.3\", \"GL Compatibility\")
+config/icon=\"res://icon.svg\"
+
+[autoload]
+
+ConfigManager=\"*res://scripts/autoload/ConfigManager.gd\"
+GameState=\"*res://scripts/autoload/GameState.gd\"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/space_time_ratio=0
+window/stretch/aspect=\"keep\"
+window/stretch/scale_mode=\"canvas_items\"
+
+[rendering]
+
+renderer/rendering_method=\"gl_compatibility\"
+renderer/rendering_method_mobile=\"gl_compatibility\"
