@@ -2,40 +2,159 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
-<title>怪物美術預覽</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>魔力寶貝怪物圖鑑 · 405 種</title>
 <style>
-  body { margin: 0; background: #1b2a17; color: #e8eefc; font-family: "Microsoft JhengHei", sans-serif; }
-  h1 { font-size: 16px; padding: 14px 18px; margin: 0; background: #10160e; }
-  #grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px; }
-  .cell { width: 150px; background: rgba(0,0,0,0.25); border: 1px solid #2f4429; border-radius: 8px; padding: 8px; text-align: center; }
-  .cell canvas { width: 120px; height: 120px; image-rendering: pixelated; }
-  .cell div { font-size: 12px; color: #b9c7de; margin-top: 4px; }
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 22px 26px 60px;
+    background: radial-gradient(circle at 20% 0%, #1b2436, #0a0d14 60%);
+    color: #e8eefc; font-family: "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+  }
+  h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: 2px; color: #ffd76a; }
+  .sub { color: #8fa0bb; font-size: 13px; margin-bottom: 16px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .bar b { font-size: 12px; color: #9fb0c9; font-weight: 400; margin-right: 2px; }
+  button {
+    background: #1b2230; color: #cfd9ea; border: 1px solid #2d3a4f;
+    border-radius: 999px; padding: 6px 13px; font-size: 12px; cursor: pointer;
+  }
+  button:hover { border-color: #4a5f80; }
+  button.on { background: #ffd76a; color: #1a1408; border-color: #ffd76a; font-weight: 700; }
+  #grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px;
+  }
+  .m {
+    background: linear-gradient(180deg, #151b26, #10141c);
+    border: 1px solid #232c3c; border-radius: 10px; padding: 8px 8px 7px;
+    text-align: center; overflow: hidden;
+  }
+  .m:hover { border-color: #ffd76a55; }
+  .m .pic {
+    height: 96px; display: flex; align-items: flex-end; justify-content: center;
+    background: radial-gradient(ellipse at 50% 85%, #2a3446, transparent 70%);
+    border-radius: 6px; margin-bottom: 6px;
+  }
+  .m img { max-width: 100%; max-height: 96px; image-rendering: pixelated; }
+  .m .name { font-size: 12.5px; color: #ffe9b0; }
+  .m .meta { font-size: 10px; color: #7d8ca4; margin-top: 2px; }
+  .m .boss { display: inline-block; margin-left: 3px; color: #ff9b6a; }
+  .empty { color: #6c7c94; padding: 30px; }
 </style>
 </head>
 <body>
-<h1>怪物美術預覽（哥布林為原版 sprite，其餘為同風格像素圖）</h1>
-<div id="grid"></div>
-<script src="../art.js"></script>
-<script>
-  ART.load().then(function () {
-    var grid = document.getElementById("grid");
-    for (var id = 0; id < 14; id++) {
-      var cell = document.createElement("div");
-      cell.className = "cell";
-      var cv = document.createElement("canvas");
-      cv.width = 128; cv.height = 128;
-      cell.appendChild(cv);
-      var label = document.createElement("div");
-      label.textContent = "#" + id;
-      cell.appendChild(label);
-      grid.appendChild(cell);
+<h1>魔力寶貝怪物圖鑑</h1>
+<div class="sub" id="sub">載入中…</div>
 
-      var g = cv.getContext("2d");
-      g.fillStyle = "#3f6b2a";
-      g.fillRect(0, 0, 128, 128);
-      ART.drawEnemy(g, { id: id, x: 0, y: 0, hitFlash: 0 }, 64, 120, 0, 2.4);
-    }
+<div class="bar">
+  <b>動作</b>
+  <button data-state="idle" class="on">待機</button>
+  <button data-state="walk">行走</button>
+  <button data-state="attack">攻擊</button>
+  <button data-state="special">施法</button>
+  <button data-state="hurt">受傷</button>
+  <button data-state="die">死亡</button>
+  <b style="margin-left:12px">地區</b>
+  <span id="regions"></span>
+</div>
+
+<div id="grid"><div class="empty">載入 catalog.json…</div></div>
+
+<script>
+(function () {
+  "use strict";
+  var CATALOG_URL = "../web-assets/monsters/catalog.json";
+  var BASE = "../web-assets/monsters/";
+  var state = "idle";
+  var regionFilter = "";
+  var data = null;
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function render() {
+    var grid = document.getElementById("grid");
+    var sub = document.getElementById("sub");
+    grid.innerHTML = "";
+    if (!data) return;
+
+    var list = data.monsters.filter(function (m) {
+      return !regionFilter || (m.regions || []).indexOf(regionFilter) >= 0;
+    });
+
+    sub.textContent = "共 " + data.monsters.length + " 種怪物 · 15 個地區 · 目前顯示 " + list.length +
+      " 種 · 動作：" + ({ idle: "待機", walk: "行走", attack: "攻擊", special: "施法", hurt: "受傷", die: "死亡" })[state];
+
+    list.forEach(function (m) {
+      var card = el("div", "m");
+      var pic = el("div", "pic");
+      var img = el("img");
+      img.loading = "lazy";
+      img.alt = m.name;
+      img.src = BASE + m.id + "/" + state + ".webp";
+      img.onerror = function () {
+        if (img.dataset.fb) { img.style.visibility = "hidden"; return; }
+        img.dataset.fb = "1";
+        img.src = BASE + m.id + "/idle.webp";
+      };
+      pic.appendChild(img);
+      card.appendChild(pic);
+      card.appendChild(el("div", "name", m.name));
+      var meta = el("div", "meta", (m.regions || []).join("、") + " · " + m.w + "×" + m.h);
+      card.appendChild(meta);
+      grid.appendChild(card);
+    });
+
+    if (!list.length) grid.appendChild(el("div", "empty", "這個地區沒有怪物。"));
+  }
+
+  function buildRegions() {
+    var box = document.getElementById("regions");
+    box.innerHTML = "";
+    var all = el("button", "on", "全部");
+    all.addEventListener("click", function () {
+      regionFilter = "";
+      Array.prototype.forEach.call(box.children, function (b) { b.classList.remove("on"); });
+      all.classList.add("on");
+      render();
+    });
+    box.appendChild(all);
+    data.regions.forEach(function (r) {
+      var b = el("button", null, r.name + " (" + r.count + ")");
+      b.addEventListener("click", function () {
+        regionFilter = r.name;
+        Array.prototype.forEach.call(box.children, function (x) { x.classList.remove("on"); });
+        b.classList.add("on");
+        render();
+      });
+      box.appendChild(b);
+    });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("button[data-state]"), function (b) {
+    b.addEventListener("click", function () {
+      state = b.getAttribute("data-state");
+      Array.prototype.forEach.call(document.querySelectorAll("button[data-state]"), function (x) {
+        x.classList.toggle("on", x === b);
+      });
+      render();
+    });
   });
+
+  fetch(CATALOG_URL).then(function (r) { return r.json(); }).then(function (json) {
+    data = json;
+    buildRegions();
+    render();
+  }).catch(function (err) {
+    document.getElementById("grid").innerHTML =
+      '<div class="empty">讀不到 catalog.json（請用 Tools/serve-web.ps1 起本機伺服器）<br>' + err + "</div>";
+  });
+})();
 </script>
 </body>
 </html>

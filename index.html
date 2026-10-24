@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>魔力寶貝幸存者 · Web</title>
-<link rel="stylesheet" href="style.css?v=20251024-15" />
+<link rel="stylesheet" href="style.css?v=20261024-1" />
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -32,6 +32,7 @@
       <a class="btn" href="admin.html">後台編輯數據</a>
       <a class="btn" href="https://github.com/TheLiberalArtsPressAd/moli" target="_blank" rel="noopener">GitHub</a>
     </div>
+    <p id="loopNote" class="note"></p>
     <p id="loadNote" class="note"></p>
   </div>
 </div>
@@ -59,7 +60,31 @@
   <div id="skillBar" class="skillBar"></div>
   <div id="toast" class="toast"></div>
 
+  <div id="bossBar" class="bossBar hidden">
+    <div class="bossHead">
+      <b id="bossName">BOSS</b>
+      <em id="bossTitle"></em>
+      <span id="bossPhase" class="bossPhase">第一階段</span>
+    </div>
+    <div class="bossTrack"><i id="bossFill"></i><span id="bossHp"></span></div>
+  </div>
+
   <button id="quitBtn" class="quit">離開</button>
+</div>
+
+<!-- 關卡與霸主登場字卡 -->
+<div id="stageIntro" class="stageIntro hidden">
+  <div class="siKicker" id="siKicker">STAGE 01</div>
+  <div class="siName" id="siName"></div>
+  <div class="siDesc" id="siDesc"></div>
+  <div class="siBoss" id="siBoss"></div>
+</div>
+
+<div id="bossIntro" class="bossIntro hidden">
+  <div class="biKicker" id="biKicker">BOSS</div>
+  <div class="biName" id="biName"></div>
+  <div class="biTitle" id="biTitle"></div>
+  <div class="biLore" id="biLore"></div>
 </div>
 
 <!-- 升級 / 結束 -->
@@ -81,7 +106,7 @@
   </div>
 </div>
 
-<script src="art.js?v=20251024-15"></script>
-<script src="game.js?v=20251024-15"></script>
+<script src="art.js?v=20261024-1"></script>
+<script src="game.js?v=20261024-1"></script>
 </body>
 </html>

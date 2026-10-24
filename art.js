@@ -59,6 +59,56 @@
 
   function isReady() { return loaded; }
 
+  // --------------------------------------------------- 原版怪物素材（含動作狀態）
+  // web-assets/monsters/<id>/{idle,walk,attack,die}.webp
+  // 由 Tools/build-monster-assets.py 從「魔力寶貝怪物素材」轉出（無損動畫 WebP）
+  var MON_DIR = ART_DIR.replace(/web-assets\/art\/$/, "web-assets/monsters/");
+  var MON = {};        // id -> { idle, walk, attack, die }
+
+  function loadMonster(id, states) {
+    if (!id) return Promise.resolve(null);
+    states = states || ["idle", "walk", "attack", "die"];
+    var set = MON[id];
+    if (!set) {
+      set = {};
+      MON[id] = set;
+    }
+    var jobs = [];
+    states.forEach(function (state) {
+      if (set[state]) return;
+      var key = "_p_" + state;
+      if (set[key]) { jobs.push(set[key]); return; }
+      set[key] = loadImage(MON_DIR + id + "/" + state + ".webp").then(function (img) {
+        if (img) set[state] = img;
+        delete set[key];
+        return img;
+      });
+      jobs.push(set[key]);
+    });
+    return Promise.all(jobs).then(function () { return set; });
+  }
+
+  function loadMonsters(ids, onProgress, states) {
+    var uniq = [];
+    (ids || []).forEach(function (id) {
+      if (id && uniq.indexOf(id) < 0) uniq.push(id);
+    });
+    var done = 0;
+    return Promise.all(uniq.map(function (id) {
+      return loadMonster(id, states).then(function (set) {
+        done++;
+        if (onProgress) onProgress(done, uniq.length);
+        return set;
+      });
+    }));
+  }
+
+  function monsterLoaded(id) {
+    return !!(id && MON[id]);
+  }
+
+  function clampNum(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
   // ------------------------------------------------------------- 色調／生物群系
   var BIOMES = {
     forest: {
@@ -147,6 +197,20 @@
     forest: "forest", island: "island", coast: "island", deepforest: "deepforest",
     cave: "cave", cave2: "cave2", snow: "snow", desert: "desert",
     volcano: "volcano", graveyard: "graveyard", underwater: "underwater"
+  };
+
+  // 每個地區的地標：讓 15 張地圖除了色調之外還有自己的輪廓
+  var LANDMARKS = {
+    forest:     { kind: "shrine",    count: 6, tint: "#c9b47a" },
+    island:     { kind: "shrine",    count: 7, tint: "#e8d9a0" },
+    deepforest: { kind: "mushroom",  count: 9, tint: "#9fe6b8" },
+    cave:       { kind: "crystal",   count: 8, tint: "#b49cff" },
+    cave2:      { kind: "crystal",   count: 9, tint: "#9fd8ff" },
+    snow:       { kind: "crystal",   count: 7, tint: "#dff3ff" },
+    desert:     { kind: "ruin",      count: 8, tint: "#e6c98a" },
+    volcano:    { kind: "lavacrack", count: 7, tint: "#ff8a4a" },
+    graveyard:  { kind: "grave",     count: 9, tint: "#b9c6e6" },
+    underwater: { kind: "coral",     count: 10, tint: "#8fe6ff" }
   };
 
   function biomeFor(level) {
@@ -270,12 +334,37 @@
     }
     trees.sort(function (a, b) { return a.y - b.y; });
 
+    // 地標：沿著出生點外圈擺放，讓每個地區有自己的地景記憶點
+    var ldef = LANDMARKS[biomeKey] || LANDMARKS.forest;
+    var landmarks = [];
+    var arenaR = Math.min(w, h) * 0.16;
+    for (var li = 0; li < ldef.count; li++) {
+      var lr = r();
+      var ang = (li / ldef.count) * Math.PI * 2 + lr * 0.5;
+      var radius = arenaR + 180 + r() * Math.max(80, Math.min(w, h) * 0.26);
+      var lx = cx + Math.cos(ang) * radius;
+      var ly = cy + Math.sin(ang) * radius * 0.82;
+      if (lx < 90 || lx > w - 90 || ly < 110 || ly > h - 90) continue;
+      landmarks.push({
+        type: "landmark",
+        kind: ldef.kind,
+        tint: ldef.tint,
+        x: lx, y: ly,
+        scale: 0.8 + r() * 0.55,
+        flip: r() > 0.5
+      });
+    }
+
+    var props = trees.concat(landmarks);
+    props.sort(function (a, b) { return a.y - b.y; });
+
     return {
       biome: biomeKey,
       biomeDef: biome,
       w: w, h: h,
       bg: bg,
-      props: trees,
+      props: props,
+      arena: { x: cx, y: cy, r: arenaR, color: level.ArenaColor || "#ffcf7a" },
       seed: hashStr((level.Name || "") + ":" + biomeKey)
     };
   }
@@ -313,6 +402,7 @@
   var TREE_CACHE = {};
 
   function drawProp(ctx, prop, sx, sy) {
+    if (prop.type === "landmark") { drawLandmark(ctx, prop, sx, sy); return; }
     if (prop.type !== "tree" || !IMG.tree) return;
     var biomeDef = prop.biomeDef || null;
     var key = prop.scale.toFixed(2) + "|" + (biomeDef ? biomeDef.treeTint : "") + "|" + (prop.swap ? 1 : 0);
@@ -337,6 +427,148 @@
       TREE_CACHE[key] = c;
     }
     ctx.drawImage(img, Math.round(sx - img.width / 2), Math.round(sy - img.height + 6));
+  }
+
+  // 各地區地標（純程式繪製，跟原版地圖色調融合）
+  function drawLandmark(ctx, prop, sx, sy) {
+    var t = Date.now() / 1000;
+    var s = prop.scale;
+    var tint = prop.tint || "#c9b47a";
+    ctx.save();
+    ctx.translate(sx, sy);
+    if (prop.flip) ctx.scale(-1, 1);
+    ctx.scale(s, s);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.beginPath();
+    ctx.ellipse(0, 2, 22, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    var glow = 0.55 + 0.45 * Math.sin(t * 1.8 + sx * 0.01);
+
+    if (prop.kind === "shrine") {
+      ctx.fillStyle = "#6d6250";
+      ctx.fillRect(-20, -8, 40, 10);
+      ctx.fillStyle = "#8b7d63";
+      ctx.fillRect(-15, -34, 7, 28);
+      ctx.fillRect(8, -34, 7, 28);
+      ctx.fillRect(-22, -40, 44, 7);
+      ctx.fillStyle = tint;
+      ctx.fillRect(-20, -46, 40, 6);
+      ctx.save();
+      ctx.shadowColor = tint; ctx.shadowBlur = 18 * glow;
+      ctx.fillStyle = "rgba(255,246,200,0.92)";
+      ctx.beginPath(); ctx.arc(0, -62, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } else if (prop.kind === "ruin") {
+      ctx.fillStyle = "#a08a62";
+      ctx.fillRect(-18, -30, 9, 32);
+      ctx.fillRect(4, -52, 9, 54);
+      ctx.fillRect(14, -20, 8, 22);
+      ctx.fillStyle = "#7d6a4a";
+      ctx.fillRect(-24, -2, 46, 6);
+      ctx.fillStyle = tint;
+      ctx.globalAlpha = 0.55;
+      ctx.fillRect(-18, -30, 9, 4);
+      ctx.fillRect(4, -52, 9, 4);
+      ctx.globalAlpha = 1;
+    } else if (prop.kind === "crystal") {
+      for (var i = 0; i < 3; i++) {
+        var ox = [-13, 2, 14][i], hh = [26, 42, 20][i];
+        ctx.save();
+        ctx.shadowColor = tint;
+        ctx.shadowBlur = 14 * glow;
+        ctx.fillStyle = i === 1 ? "rgba(220,245,255,0.92)" : tint;
+        ctx.beginPath();
+        ctx.moveTo(ox, 0);
+        ctx.lineTo(ox - 6, -hh * 0.55);
+        ctx.lineTo(ox, -hh);
+        ctx.lineTo(ox + 6, -hh * 0.55);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    } else if (prop.kind === "grave") {
+      ctx.fillStyle = "#7b8296";
+      ctx.fillRect(-2, -34, 4, 36);
+      ctx.fillRect(-12, -26, 24, 4);
+      ctx.fillStyle = "#5a6072";
+      ctx.fillRect(-16, -4, 32, 6);
+      ctx.save();
+      ctx.globalAlpha = 0.35 + 0.25 * glow;
+      ctx.fillStyle = "#a9c8ff";
+      ctx.beginPath(); ctx.arc(0, -18, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } else if (prop.kind === "lavacrack") {
+      ctx.save();
+      ctx.shadowColor = "#ff6a20";
+      ctx.shadowBlur = 20 * glow;
+      ctx.strokeStyle = "#ff8a3d";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(-28, 0); ctx.lineTo(-12, -10); ctx.lineTo(0, -5);
+      ctx.lineTo(12, -16); ctx.lineTo(28, -8);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,225,150,0.9)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.restore();
+    } else if (prop.kind === "coral") {
+      ctx.save();
+      ctx.shadowColor = tint;
+      ctx.shadowBlur = 10 * glow;
+      ctx.strokeStyle = tint;
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -26); ctx.stroke();
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(-14, -30); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -18); ctx.lineTo(13, -36); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-14, -30); ctx.lineTo(-18, -40); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(13, -36); ctx.lineTo(17, -46); ctx.stroke();
+      ctx.restore();
+    } else if (prop.kind === "mushroom") {
+      ctx.fillStyle = "#e8e0c8";
+      ctx.fillRect(-4, -24, 8, 24);
+      ctx.save();
+      ctx.shadowColor = tint;
+      ctx.shadowBlur = 16 * glow;
+      ctx.fillStyle = tint;
+      ctx.beginPath();
+      ctx.ellipse(0, -28, 20, 12, 0, Math.PI, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.beginPath(); ctx.arc(-7, -31, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(6, -34, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 中央競技場：霸主登場時會亮起
+  function drawArena(ctx, scene, cam, vw, vh, time, active) {
+    if (!scene || !scene.arena) return;
+    var a = scene.arena;
+    var sx = a.x - cam.x + vw / 2;
+    var sy = a.y - cam.y + vh / 2;
+    if (sx < -a.r - vw || sx > vw + a.r || sy < -a.r - vh || sy > vh + a.r) return;
+    var pulse = active ? 0.55 + 0.45 * Math.sin(time * 3) : 0.18;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.strokeStyle = a.color;
+    ctx.globalAlpha = pulse * 0.7;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, a.r, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = pulse * 0.45;
+    ctx.beginPath(); ctx.arc(0, 0, a.r * 0.72, 0, Math.PI * 2); ctx.stroke();
+    ctx.rotate(time * 0.12);
+    ctx.setLineDash([18, 16]);
+    ctx.lineWidth = 4;
+    ctx.globalAlpha = pulse;
+    ctx.beginPath(); ctx.arc(0, 0, a.r * 0.88, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
   }
 
   function propFoot(prop) { return { x: prop.x, y: prop.y }; }
@@ -556,13 +788,44 @@
   }
 
   function drawEnemy(ctx, e, sx, sy, time, scaleMul) {
+    // 原版怪物圖：依狀態挑選動畫（待機／行走／攻擊／死亡）
+    var set = e.mon ? MON[e.mon] : null;
+    if (set && (set.idle || set.walk)) {
+      var state = e.dying ? "die" : (e.state || "idle");
+      var img = set[state] || set.idle || set.walk;
+      var bossMul = e.isBoss ? 1.45 : 1;
+      var targetH = clampNum(58 + (img.height - 50) * 0.72, 58, 150) * bossMul * (scaleMul || 1);
+      var scale = targetH / img.height;
+      var w = img.width * scale;
+      var h = img.height * scale;
+      var alpha = e.dying ? clampNum((e.dieT || 0) / 0.55, 0, 1) : 1;
+      var bob = state === "walk" ? Math.abs(Math.sin(time * 9 + e.x * 0.03)) * 2
+        : Math.sin(time * 4 + e.x * 0.05) * 1;
+
+      e.visW = w;
+      e.visH = h;
+      drawShadow(ctx, sx, sy, w * 0.8);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.imageSmoothingEnabled = false;
+      var dx = sx - w / 2, dy = sy - h + bob;
+      ctx.drawImage(img, dx, dy, w, h);
+      if (e.hitFlash > 0) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = 0.45 * alpha;
+        ctx.drawImage(img, dx, dy, w, h);
+      }
+      ctx.restore();
+      return;
+    }
+
     var v = visualForEnemy(e);
-    var img = v.img ? IMG[v.img] : monsterSprite(v.draw);
-    if (!img) return;
-    var scale = (v.scale || 1) * (scaleMul || 1) * (e.isBoss ? 1.7 : 1);
-    drawShadow(ctx, sx, sy, img.width * scale * 0.9);
-    var bob = Math.sin(time * 7 + e.x * 0.05) * 1.2;
-    drawSpriteEntity(ctx, img, sx, sy + bob, scale, {
+    var img2 = v.img ? IMG[v.img] : monsterSprite(v.draw);
+    if (!img2) return;
+    var scale2 = (v.scale || 1) * (scaleMul || 1) * (e.isBoss ? 1.7 : 1);
+    drawShadow(ctx, sx, sy, img2.width * scale2 * 0.9);
+    var bob2 = Math.sin(time * 7 + e.x * 0.05) * 1.2;
+    drawSpriteEntity(ctx, img2, sx, sy + bob2, scale2, {
       filter: filterFor(v),
       flash: e.hitFlash > 0,
       squash: v.squash,
@@ -712,9 +975,15 @@
     biomeFor: biomeFor,
     drawGround: drawGround,
     drawProp: drawProp,
+    drawArena: drawArena,
     propFoot: propFoot,
     drawPlayer: drawPlayer,
     drawEnemy: drawEnemy,
+    loadMonster: loadMonster,
+    loadMonsters: loadMonsters,
+    monsterLoaded: monsterLoaded,
+    monsterDir: MON_DIR,
+    monsters: MON,
     drawAmbient: drawAmbient,
     drawFog: drawFog,
     skillIcon: skillIcon,

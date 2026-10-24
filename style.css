@@ -489,7 +489,7 @@ body.admin { overflow: auto; }
   position: relative;
   flex: none;
   width: auto;
-  height: 100px;
+  height: 78px;
   padding: 0;
   overflow: hidden;
   border-radius: 10px;
@@ -527,9 +527,18 @@ body.admin { overflow: auto; }
 }
 
 #menu .actions { margin-top: 14px; }
-#menu .levelRow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+#menu .levelRow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 262px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
 #menu .section { margin-top: 10px; }
 #menu .note { color: #8f9cb3; }
+#menu #loopNote { color: #ffd76a; letter-spacing: 1px; }
 
 /* 技能列：原版技能圖示 */
 .skillChip { width: 76px; height: 84px; gap: 2px; }
@@ -563,4 +572,189 @@ body.admin { overflow: auto; }
   #menu .menuLogo { width: min(320px, 70vw); }
   #playerList .card { flex: 1 1 150px; width: auto; height: 150px; }
   #levelList .card { flex: 1 1 140px; width: auto; height: 110px; }
+}
+
+/* ===================== 霸主血條 / 登場字卡 ===================== */
+.bossBar {
+  position: absolute;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(680px, 88vw);
+  padding: 8px 12px 9px;
+  background: linear-gradient(180deg, rgba(12, 8, 14, 0.88), rgba(12, 8, 14, 0.62));
+  border: 1px solid rgba(255, 155, 106, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.bossHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+#bossName {
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: #ffd9a8;
+  text-shadow: 0 2px 6px #000;
+}
+
+#bossTitle {
+  flex: 1;
+  font-style: normal;
+  font-size: 11px;
+  color: #c6b6a4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bossPhase {
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #cdd8ea;
+}
+
+.bossPhase.enraged {
+  color: #ff8a8a;
+  border-color: rgba(255, 90, 110, 0.6);
+  background: rgba(255, 60, 80, 0.18);
+  animation: phasePulse 1s ease-in-out infinite;
+}
+
+@keyframes phasePulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(255, 90, 110, 0); }
+  50% { box-shadow: 0 0 14px rgba(255, 90, 110, 0.55); }
+}
+
+.bossTrack {
+  position: relative;
+  height: 14px;
+  background: #0b0709;
+  border: 1px solid #3a2a2c;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+#bossFill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ffb15c, #ff5a6e);
+  transition: width 0.15s linear;
+}
+
+#bossHp {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+}
+
+.stageIntro, .bossIntro {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 60;
+  animation: introFade 3s ease forwards;
+  text-align: center;
+  padding: 20px;
+}
+
+.stageIntro {
+  background: radial-gradient(ellipse at 50% 50%, rgba(8, 10, 16, 0.55), rgba(8, 10, 16, 0) 62%);
+}
+
+.bossIntro {
+  background: radial-gradient(ellipse at 50% 42%, rgba(40, 8, 10, 0.6), rgba(8, 6, 10, 0) 64%);
+  animation-duration: 3.4s;
+}
+
+.siKicker, .biKicker {
+  font-size: 12px;
+  letter-spacing: 8px;
+  color: #ffd76a;
+  text-shadow: 0 2px 8px #000;
+}
+
+.biKicker { color: #ff8a6a; }
+
+.siName {
+  font-size: clamp(28px, 5vw, 52px);
+  font-weight: 900;
+  letter-spacing: 6px;
+  color: #fff3d6;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.9), 0 0 30px rgba(255, 215, 106, 0.25);
+}
+
+.biName {
+  font-size: clamp(26px, 4.4vw, 46px);
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #ffd9a8;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.95), 0 0 34px currentColor;
+}
+
+.siDesc {
+  max-width: 760px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #b9c7de;
+  text-shadow: 0 2px 6px #000;
+}
+
+.siBoss {
+  margin-top: 8px;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: #ffd76a;
+  text-shadow: 0 2px 8px #000;
+}
+
+.biTitle {
+  font-size: 14px;
+  letter-spacing: 3px;
+  color: #e8d9c6;
+  text-shadow: 0 2px 6px #000;
+}
+
+.biLore {
+  margin-top: 6px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #9fb0c9;
+  text-shadow: 0 2px 6px #000;
+}
+
+@keyframes introFade {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  72% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (max-width: 760px) {
+  .bossBar { top: 52px; padding: 6px 9px 7px; }
+  #bossName { font-size: 13px; }
+  #bossTitle { display: none; }
+  .siName { letter-spacing: 3px; }
+  .siDesc { font-size: 12px; }
 }
