@@ -38,7 +38,29 @@
     portrait: "portrait.png",
     blade: "fx/blade.png",
     circle: "fx/circle.png",
-    arrow: "fx/arrow.png"
+    arrow: "fx/arrow.png",
+    // 原版角色：劍士（西恩 105053）與弓箭手（葛蕾絲 106126）
+    // 8 方向 × 待機／行走／攻擊，由 Tools/build-character-assets.py 產生
+    player_sword_idle: "player_sword_idle.png",
+    player_sword_walk: "player_sword_walk.png",
+    player_sword_attack: "player_sword_attack.png",
+    player_bow_idle: "player_bow_idle.png",
+    player_bow_walk: "player_bow_walk.png",
+    player_bow_attack: "player_bow_attack.png"
+  };
+
+  // 角色 sprite sheet 設定（方向 0=N,1=NE,2=E,3=SE,4=S,5=SW,6=W,7=NW）
+  var PLAYER_ART = {
+    sword: {
+      idle:   { img: "player_sword_idle",   n: 4,  cw: 128, ch: 128, ax: 64,  ay: 88  },
+      walk:   { img: "player_sword_walk",   n: 6,  cw: 128, ch: 128, ax: 64,  ay: 88  },
+      attack: { img: "player_sword_attack", n: 16, cw: 256, ch: 224, ax: 128, ay: 140 }
+    },
+    bow: {
+      idle:   { img: "player_bow_idle",   n: 4,  cw: 128, ch: 128, ax: 64,  ay: 88  },
+      walk:   { img: "player_bow_walk",   n: 6,  cw: 128, ch: 128, ax: 64,  ay: 88  },
+      attack: { img: "player_bow_attack", n: 13, cw: 256, ch: 224, ax: 128, ay: 140 }
+    }
   };
 
   var readyPromise = null;
@@ -776,15 +798,56 @@
   }
 
   function drawPlayer(ctx, p, sx, sy, time) {
-    var img = IMG.player;
-    var scale = p.artScale || 1.15;
-    drawShadow(ctx, sx, sy, img ? img.width * scale : 40);
-    if (img) {
-      ctx.save();
-      if (p.artHue) ctx.filter = "hue-rotate(" + p.artHue + "deg) saturate(1.1)";
-      ctx.drawImage(img, sx - img.width * scale / 2, sy - img.height * scale, img.width * scale, img.height * scale);
-      ctx.restore();
+    var key = p.spriteKey === "bow" ? "bow" : "sword";
+    var state = p.attackT > 0 ? "attack" : (p.moving ? "walk" : "idle");
+    var set = PLAYER_ART[key];
+    var art = set && set[state];
+    var img = art ? IMG[art.img] : null;
+
+    // 舊版單張 GIF 後備（例如自訂角色或素材載入失敗）
+    if (!img) {
+      img = IMG.player;
+      var oldScale = p.artScale || 1.15;
+      drawShadow(ctx, sx, sy, img ? img.width * oldScale : 40);
+      if (img) {
+        ctx.save();
+        ctx.drawImage(img, sx - img.width * oldScale / 2,
+          sy - img.height * oldScale, img.width * oldScale, img.height * oldScale);
+        ctx.restore();
+      }
+      return;
     }
+
+    var scale = p.artScale || 1.35;
+    var dir = clampNum(p.dir === undefined ? 4 : p.dir, 0, 7) | 0;
+    var frame;
+    if (state === "attack") {
+      var dur = p.attackDur || 0.8;
+      var k = 1 - clampNum(p.attackT / dur, 0, 1);
+      frame = Math.min(art.n - 1, Math.floor(k * art.n));
+    } else {
+      var fps = state === "walk" ? 8 : 3;
+      frame = Math.floor(time * fps) % art.n;
+    }
+
+    var srcX = frame * art.cw;
+    var srcY = dir * art.ch;
+    var w = art.cw * scale;
+    var h = art.ch * scale;
+    var dx = sx - art.ax * scale;
+    var dy = sy - art.ay * scale;
+
+    drawShadow(ctx, sx, sy, 34 * scale);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    if (p.invT > 0 && Math.floor(time * 18) % 2 === 0) ctx.globalAlpha = 0.45;
+    ctx.drawImage(img, srcX, srcY, art.cw, art.ch, dx, dy, w, h);
+    if (p.hitFlash > 0) {
+      ctx.globalAlpha = 0.35 * clampNum(p.hitFlash / 0.15, 0, 1);
+      ctx.globalCompositeOperation = "lighter";
+      ctx.drawImage(img, srcX, srcY, art.cw, art.ch, dx, dy, w, h);
+    }
+    ctx.restore();
   }
 
   function drawEnemy(ctx, e, sx, sy, time, scaleMul) {

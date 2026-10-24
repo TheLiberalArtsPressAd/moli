@@ -1,0 +1,125 @@
+{
+  "dirs": 8,
+  "cell": {
+    "idle": [
+      128,
+      128
+    ],
+    "walk": [
+      128,
+      128
+    ],
+    "attack": [
+      256,
+      224
+    ]
+  },
+  "anchor": {
+    "idle": [
+      64,
+      88
+    ],
+    "walk": [
+      64,
+      88
+    ],
+    "attack": [
+      128,
+      140
+    ]
+  },
+  "chars": {
+    "sword": {
+      "name": "劍士",
+      "serial": 105053,
+      "idle": {
+        "file": "player_sword_idle.png",
+        "frames": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "maxFrames": 4
+      },
+      "walk": {
+        "file": "player_sword_walk.png",
+        "frames": [
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6
+        ],
+        "maxFrames": 6
+      },
+      "attack": {
+        "file": "player_sword_attack.png",
+        "frames": [
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "maxFrames": 16
+      }
+    },
+    "bow": {
+      "name": "弓箭手",
+      "serial": 106126,
+      "idle": {
+        "file": "player_bow_idle.png",
+        "frames": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "maxFrames": 4
+      },
+      "walk": {
+        "file": "player_bow_walk.png",
+        "frames": [
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6
+        ],
+        "maxFrames": 6
+      },
+      "attack": {
+        "file": "player_bow_attack.png",
+        "frames": [
+          13,
+          13,
+          13,
+          13,
+          13,
+          13,
+          13,
+          13
+        ],
+        "maxFrames": 13
+      }
+    }
+  }
+}

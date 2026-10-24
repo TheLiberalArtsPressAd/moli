@@ -271,8 +271,12 @@
       x: worldW / 2,
       y: worldH / 2,
       vx: 0, vy: 0,
-      artScale: 1.15,
-      artHue: num(pInfo.ATKSkill, 0) === 1 ? 120 : 0,
+      artScale: 1.35,
+      spriteKey: pi === 1 ? "bow" : "sword",
+      dir: 4,
+      moving: false,
+      attackT: 0,
+      attackDur: 0.8,
       r: 15,
       face: 1,
       hp: 0, maxhp: 0,
@@ -766,11 +770,19 @@
         var percent = param(atkSkill, "Percent", 100);
         var count = Math.max(1, param(atkSkill, "Count", 1));
         var dmg = p.atk * percent / 100;
+        p.attackT = p.attackDur;
+        p.dir = dirFromVector(target.x - p.x, target.y - p.y, p.dir);
         for (var i = 0; i < count; i++) {
           var t = nearestEnemy(p, 460);
           if (!t) break;
           dealDamage(t, dmg);
-          G.fx.push({ type: "slash", x: t.x, y: t.y, t: 0.18, r: 26, color: "#9fe8ff" });
+          if (p.spriteKey === "bow") {
+            G.fx.push({ type: "arrow", x: p.x, y: p.y - 24, tx: t.x, ty: t.y - 16,
+              t: 0.16, max: 0.16, color: "#ffe08a" });
+          } else {
+            G.fx.push({ type: "slash", x: t.x, y: t.y, t: 0.18, r: 26,
+              color: "#9fe8ff" });
+          }
         }
         p.face = target.x >= p.x ? 1 : -1;
       } else {
@@ -786,6 +798,8 @@
           var near = nearestEnemy(p, 520);
           if (near) {
             p.specialCd = Math.max(1, num(sp.CD, 10));
+            p.attackT = p.attackDur;
+            if (near) p.dir = dirFromVector(near.x - p.x, near.y - p.y, p.dir);
             var radius = 120 + param(sp, "Range", 50) * 1.6;
             var spPercent = param(sp, "Percent", 80);
             var hits = 0;
@@ -799,6 +813,14 @@
         }
       }
     }
+  }
+
+  // 移動向量 -> 原版 8 方向（0=N,1=NE,2=E,3=SE,4=S,5=SW,6=W,7=NW）
+  function dirFromVector(mx, my, fallback) {
+    if (!mx && !my) return fallback;
+    var ang = Math.atan2(my, mx) * 180 / Math.PI;
+    var idx = Math.round((ang + 90) / 45);
+    return ((idx % 8) + 8) % 8;
   }
 
   function nearestEnemy(from, maxDist) {
@@ -829,8 +851,10 @@
     }
 
     var len = Math.hypot(mx, my);
+    p.moving = len > 0;
     if (len > 0) {
       mx /= len; my /= len;
+      p.dir = dirFromVector(mx, my, p.dir);
       p.vx = mx * p.spd; p.vy = my * p.spd;
       p.x = clamp(p.x + p.vx * dt, p.r, G.worldW - p.r);
       p.y = clamp(p.y + p.vy * dt, p.r, G.worldH - p.r);
@@ -839,6 +863,7 @@
       p.vx = 0; p.vy = 0;
     }
 
+    p.attackT = Math.max(0, p.attackT - dt);
     p.hitFlash = Math.max(0, p.hitFlash - dt);
     p.invT = Math.max(0, p.invT - dt);
 
@@ -1346,6 +1371,24 @@
         ctx.lineWidth = 3;
         ctx.stroke();
         ctx.globalAlpha = 1;
+      } else if (f.type === "arrow") {
+        var ak = 1 - f.t / (f.max || 0.16);
+        var ax = f.x + (f.tx - f.x) * ak;
+        var ay = f.y + (f.ty - f.y) * ak;
+        var asp = toScreen(ax, ay);
+        var ang = Math.atan2(f.ty - f.y, f.tx - f.x);
+        ctx.save();
+        ctx.translate(asp.x, asp.y);
+        ctx.rotate(ang);
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.16), 0, 1);
+        ctx.strokeStyle = f.color;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(-18, 0); ctx.lineTo(0, 0); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(-7, -5);
+        ctx.moveTo(0, 0); ctx.lineTo(-7, 5);
+        ctx.stroke();
+        ctx.restore();
       } else if (f.type === "slash") {
         ctx.beginPath();
         ctx.arc(sx, sy, f.r, -0.6, 0.9);
@@ -1589,7 +1632,7 @@
   window.MOLI = {
     get state() { return G; },
     get config() { return CONFIG; },
-    version: "2026-10-24"
+    version: "2026-10-24-2"
   };
 
   loadConfig();

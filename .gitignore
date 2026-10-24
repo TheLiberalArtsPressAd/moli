@@ -5,6 +5,10 @@
 # 使用者自行匯出的美術素材（不隨專案散布）
 /assets/local/
 
+# 本機解圖／預覽暫存
+Tools/tmp/
+__pycache__/
+
 # This .gitignore file should be placed at the root of your Unity project directory
 #
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore

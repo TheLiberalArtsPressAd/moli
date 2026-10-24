@@ -21,6 +21,8 @@ Unity C# 專案（Unity 2021.3.30f1），另外附一份純 HTML5 網頁版。
 | `web-assets/art/` | 網頁版使用的美術素材（由 `Tools/build-web-assets.ps1` 從 `Assets/` 產生） |
 | `web-assets/monsters/` | 405 種原版怪物素材 × 6 種動作（待機／行走／攻擊／施法／受傷／死亡） |
 | `Tools/build-web-assets.ps1` | 從專案原本的美術檔產生 `web-assets/art/` |
+| `Tools/extract-cg-character.py` | 從原版客戶端 `Graphic*.bin` / `Anime*.bin` 解出角色圖檔（Python 版 CGTool） |
+| `Tools/build-character-assets.py` | 產生劍士／弓箭手的 8 方向待機、行走、攻擊 sprite sheet |
 | `Tools/build-monster-assets.py` | 掃描怪物素材資料夾，產生 `web-assets/monsters/` 與 `catalog.json`（可續傳，只補缺的動作） |
 | `Tools/build-levels.js` | 由怪物圖鑑自動產生 15 個地區關卡與霸主設計（`config/game_config.json`） |
 | `Tools/monster-preview.html` | 405 種怪物圖鑑（可切換 6 種動作） |
@@ -73,7 +75,8 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
 | 關卡封面 | `Assets/Textures/LevelCover.png`（前兩關） |
 | 戰場地圖 | `Assets/Temp/位图.png`（已去掉「角色選擇 / 關卡選擇」字樣） |
 | 樹木 | `Assets/Temp/7813.png` |
-| 主角 | `Assets/Temp/105400.gif` |
+| 主角（劍士） | 原版客戶端角色 105053（西恩）→ `web-assets/art/player_sword_*.png` |
+| 主角（弓箭手） | 原版客戶端角色 106126（葛蕾絲）→ `web-assets/art/player_bow_*.png` |
 | 哥布林 / 紅帽哥布林 | `Assets/Textures/enemy.gif` |
 | 405 種怪物（含待機／行走／攻擊／施法／受傷／死亡動作） | `魔力寶貝怪物素材/<地區>/<怪物>/*.gif` → `web-assets/monsters/` |
 | 技能圖示 | `Assets/Resources/SkillIcons/*.png` |
@@ -85,6 +88,14 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
 - **怪物全部使用原版素材**：`web-assets/monsters/` 內含 405 種怪物、2,424 段動畫，
   每種都有待機（idle）／行走（walk）／攻擊（attack）／施法（special）／受傷（hurt）／死亡（die），
   戰鬥中會依狀態播放；素材來自 `魔力寶貝怪物素材`，以無損動畫 WebP 轉檔（約 53 MB）。
+- **主角也使用原版角色圖**：劍士是西恩（客戶端角色 105053）、弓箭手是葛蕾絲（106126），
+  兩者都有 8 方向 × 待機／行走／攻擊，腳底錨點對齊，遊戲中會依移動方向與攻擊狀態切換。
+  角色圖直接從客戶端 `Graphic*.bin` / `Anime*.bin` 解出，不是用舊的單張 GIF 改色。
+- 重新產生角色素材（需要 `C:\Users\e3479\Downloads\moli\bin`，或設定 `CG_CLIENT_DIR`）：
+
+  ```powershell
+  python Tools\build-character-assets.py
+  ```
 - 重新產生怪物素材（換了素材資料夾之後，已存在的動作會跳過）：
 
   ```powershell
