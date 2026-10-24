@@ -111,15 +111,11 @@
     var out = {
       PlayerGrow: Object.assign({}, FALLBACK.PlayerGrow, data.PlayerGrow || {}),
       EnemyGrow: Object.assign({}, FALLBACK.EnemyGrow, data.EnemyGrow || {}),
-      Players: Array.isArray(data.Players) ? data.Players : FALLBACK.Players,
-      Enemies: Array.isArray(data.Enemies) ? data.Enemies : FALLBACK.Enemies,
-      Skills: Array.isArray(data.Skills) ? data.Skills : FALLBACK.Skills,
-      Levels: Array.isArray(data.Levels) ? data.Levels : FALLBACK.Levels
+      Players: Array.isArray(data.Players) && data.Players.length ? data.Players : FALLBACK.Players,
+      Enemies: Array.isArray(data.Enemies) && data.Enemies.length ? data.Enemies : FALLBACK.Enemies,
+      Skills: Array.isArray(data.Skills) && data.Skills.length ? data.Skills : FALLBACK.Skills,
+      Levels: Array.isArray(data.Levels) && data.Levels.length ? data.Levels : FALLBACK.Levels
     };
-    if (!out.Players.length) out.Players = FALLBACK.Players;
-    if (!out.Enemies.length) out.Enemies = FALLBACK.Enemies;
-    if (!out.Skills.length) out.Skills = FALLBACK.Skills;
-    if (!out.Levels.length) out.Levels = FALLBACK.Levels;
     return out;
   }
 
@@ -151,6 +147,10 @@
     if (!playerListEl || !levelListEl) return;
     playerListEl.innerHTML = "";
     levelListEl.innerHTML = "";
+    if (!CONFIG.Players) CONFIG.Players = FALLBACK.Players;
+    if (!CONFIG.Levels) CONFIG.Levels = FALLBACK.Levels;
+    if (!CONFIG.Skills) CONFIG.Skills = FALLBACK.Skills;
+    if (!CONFIG.Enemies) CONFIG.Enemies = FALLBACK.Enemies;
 
     CONFIG.Players.forEach(function (p, i) {
       var d = document.createElement("div");
