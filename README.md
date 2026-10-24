@@ -7,6 +7,12 @@ Unity C# 專案（Unity 2021.3.30f1），另外附一份純 HTML5 網頁版（`i
 - 網頁版直接由分支內容提供，**不需要** Unity WebGL 建置，也不需要任何 Secrets。
 - GitHub Pages 可以設定成「分支根目錄」或「分支 `/docs`」兩種來源，本專案兩邊都放同一份檔案以免設錯就壞掉。
 
+### 本機先確認有沒有壞
+```powershell
+powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
+```
+然後開 `http://localhost:8080/`（Ctrl+C 結束）。
+
 ### 修改網頁版後
 ```powershell
 powershell -ExecutionPolicy Bypass -File Tools\sync-web.ps1
