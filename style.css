@@ -487,8 +487,8 @@ body.admin { overflow: auto; }
 
 #levelList .card {
   position: relative;
-  flex: 0 0 140px;
-  width: 140px;
+  flex: none;
+  width: auto;
   height: 100px;
   padding: 0;
   overflow: hidden;
@@ -527,7 +527,7 @@ body.admin { overflow: auto; }
 }
 
 #menu .actions { margin-top: 14px; }
-#menu .levelRow { gap: 8px; }
+#menu .levelRow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 #menu .section { margin-top: 10px; }
 #menu .note { color: #8f9cb3; }
 
@@ -557,6 +557,7 @@ body.admin { overflow: auto; }
 }
 
 @media (max-width: 900px) {
+  #menu .levelRow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   #menu .menuHero { display: none; }
   #menu .menuInner { width: 100%; padding: 18px 16px 26px; }
   #menu .menuLogo { width: min(320px, 70vw); }
