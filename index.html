@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>魔力寶貝幸存者 · Web</title>
-<link rel="stylesheet" href="style.css?v=20261024-2" />
+<link rel="stylesheet" href="style.css?v=20261025-1" />
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -52,9 +52,14 @@
       <div class="bar hp"><i id="hpFill"></i><span id="hpText">0/0</span></div>
     </div>
     <div class="barRow">
+      <span class="barLabel">MP</span>
+      <div class="bar mp"><i id="mpFill"></i><span id="mpText">0/0</span></div>
+    </div>
+    <div class="barRow">
       <span class="barLabel">EXP</span>
       <div class="bar exp"><i id="expFill"></i><span id="expText">0/0</span></div>
     </div>
+    <div id="statusInfo" class="statusInfo"></div>
   </div>
 
   <div id="skillBar" class="skillBar"></div>
@@ -106,7 +111,7 @@
   </div>
 </div>
 
-<script src="art.js?v=20261024-2"></script>
-<script src="game.js?v=20261024-2"></script>
+<script src="art.js?v=20261025-1"></script>
+<script src="game.js?v=20261025-1"></script>
 </body>
 </html>

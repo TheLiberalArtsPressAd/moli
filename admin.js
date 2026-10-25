@@ -22,7 +22,13 @@
     PlayerGrow: "玩家成長", EnemyGrow: "怪物成長", Players: "玩家", Enemies: "怪物", Skills: "技能", Levels: "關卡",
     Level: "等級", EnemyIDs: "怪物ID列表", SpawnCountPerEnemy: "每種數量", Duration: "持續秒數(-1無限)", ExtraDisturbEnemyIDs: "額外干擾", BossInfos: "Boss資訊",
     EnemyID: "怪物ID", NamePrefix: "名稱前綴", Allies: "小怪ID", SpawnPerAlly: "每波小怪數", AlliesSpawnInterval: "間隔", AlliesSpawnTimes: "次數", Skills: "技能清單",
-    SkillID: "技能ID", Percent: "傷害%", Count: "次數", Range: "範圍", Distance: "距離", Speed: "速度", Through: "穿透", Rate: "頻率", Radius: "半徑", Effect: "效果", Light: "光環類型"
+    SkillID: "技能ID", Percent: "傷害%", Count: "次數", Range: "範圍", Distance: "距離", Speed: "速度", Through: "穿透", Rate: "頻率", Radius: "半徑", Effect: "效果", Light: "光環類型",
+    Magic: "魔法書(技能ID)", Kind: "技能類型", Element: "屬性", UnlockLevel: "解鎖等級", Side: "陣營", CastTime: "詠唱秒數",
+    Phase2At: "第二階段血量%", Phase3At: "第三階段血量%", HpMul: "血量倍率", AtkMul: "攻擊倍率",
+    Mechanic: "Boss招式", Title: "稱號", Gimmick: "地區機制", EliteCount: "精英數量", Event: "波次事件",
+    Interval: "間隔秒數", Color: "顏色", Terrain: "地形", BossNames: "Boss名稱", BossTitle: "Boss稱號",
+    BossSubtitle: "Boss副標", BossLore: "Boss背景", BossColor: "Boss顏色", ArenaColor: "競技場顏色", BossAbilities: "Boss招式列表",
+    MonsterCount: "怪物數", MonsterIDs: "怪物ID列表", Region: "地區", Type: "類型", Value: "數值", Key: "參數"
   };
 
   function label(k) { return LABELS[k] || k; }
@@ -139,10 +145,10 @@
   function currentTab() { return TABS.find(function (x) { return x.id === state.tab; }); }
 
   function defaultItem(key) {
-    if (key === "Players") return { Index: 0, Name: "新角色", Desc: "", ATKSkill: 0, SpecialSkill: -1, ATK: 3, HP: 3, MP: 2, DEF: 2, SPD: 3 };
-    if (key === "Enemies") return { ID: 0, Name: "新怪物", Desc: "", ATK: 2, DEF: 2, SPD: 2, HP: 3, MP: 0, Skills: [] };
-    if (key === "Skills") return { ID: 0, Name: "新技能", Desc: "", IsSpecial: false, IsLearnable: true, IsAutoSkill: true, CD: 2, MaxLevel: 10, MPCost: 0, Params: [] };
-    if (key === "Levels") return { Name: "新關卡", Difficulty: 1, MapWidth: 40, MapHeight: 40, RoundInfos: [] };
+    if (key === "Players") return { Index: 0, Name: "新角色", Desc: "", ATKSkill: 0, SpecialSkill: -1, ATK: 3, HP: 3, MP: 2, DEF: 2, SPD: 3, Magic: [100, 105, 103, 104] };
+    if (key === "Enemies") return { ID: 0, Name: "新怪物", Desc: "", ATK: 2, DEF: 2, SPD: 2, HP: 3, MP: 0, Tier: 1, Skills: [{ SkillID: 200, Level: 1 }] };
+    if (key === "Skills") return { ID: 0, Name: "新技能", Desc: "", Kind: "", Element: "", Side: "player", IsSpecial: false, IsLearnable: true, IsAutoSkill: true, CD: 2, MaxLevel: 10, MPCost: 0, UnlockLevel: 1, Params: [] };
+    if (key === "Levels") return { Name: "新關卡", Difficulty: 1, MapWidth: 40, MapHeight: 40, Gimmick: { Kind: "tide", Name: "潮汐", Interval: 20 }, RoundInfos: [] };
     return {};
   }
 
