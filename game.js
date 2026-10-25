@@ -29,7 +29,15 @@
       { ID: 101, Name: "冰霜新星", Kind: "frost", Element: "ice", Icon: 10045, CD: 7, MPCost: 20, Percent: 150, Color: "#8fd8ff" },
       { ID: 102, Name: "雷電鏈", Kind: "chain", Element: "thunder", Icon: 10051, CD: 8, MPCost: 22, Percent: 135, Color: "#ffe066" },
       { ID: 103, Name: "治癒之光", Kind: "heal", Element: "holy", Icon: 90003, CD: 12, MPCost: 24, Percent: 30, Color: "#8fffb0" },
-      { ID: 105, Name: "神聖護盾", Kind: "shield", Element: "holy", Icon: 90036, CD: 16, MPCost: 20, Percent: 35, Color: "#ffe9a8" }
+      { ID: 104, Name: "烈焰風暴", Kind: "meteor", Element: "fire", Icon: 10015, CD: 13, MPCost: 28, Percent: 190, Color: "#ff6b3d", UnlockLevel: 4 },
+      { ID: 105, Name: "神聖護盾", Kind: "shield", Element: "holy", Icon: 90036, CD: 16, MPCost: 20, Percent: 35, Color: "#ffe9a8" },
+      { ID: 106, Name: "劇毒雲霧", Kind: "poison", Element: "poison", Icon: 90015, CD: 10, MPCost: 20, Percent: 110, Color: "#a8d46a", UnlockLevel: 4 },
+      { ID: 107, Name: "疾風刃", Kind: "wind", Element: "wind", Icon: 10107, CD: 6, MPCost: 18, Percent: 130, Color: "#9ff3d6", UnlockLevel: 1 },
+      { ID: 108, Name: "暗影箭", Kind: "fireball", Element: "dark", Icon: 90021, CD: 6, MPCost: 20, Percent: 190, Color: "#b78bff", UnlockLevel: 4 },
+      { ID: 109, Name: "魔力虹吸", Kind: "drain", Element: "dark", Icon: 90035, CD: 9, MPCost: 14, Percent: 140, Color: "#c98bff", UnlockLevel: 4 },
+      { ID: 110, Name: "隕石術", Kind: "star", Element: "fire", Icon: 10015, CD: 15, MPCost: 30, Percent: 170, Color: "#ffb15c", UnlockLevel: 4 },
+      { ID: 111, Name: "時光緩流", Kind: "time", Element: "arcane", Icon: 10139, CD: 14, MPCost: 24, Percent: 80, Color: "#9fd8ff", UnlockLevel: 6 },
+      { ID: 112, Name: "聖光審判", Kind: "holy", Element: "holy", Icon: 90012, CD: 15, MPCost: 30, Percent: 200, Color: "#ffe9a8", UnlockLevel: 6 }
     ],
     Levels: [
       {
@@ -333,7 +341,13 @@
       slowT: 0, slowMul: 1,
       regenT: 0, regen: 0,
       crit: 0, lifesteal: 0, atkCdScale: 1,
-      spellCdScale: 1, spellCostScale: 1, shieldPower: 1
+      spellCdScale: 1, spellCostScale: 1, shieldPower: 1,
+      // 被動能力（升級卡）
+      abilities: { thorn: 0, killBoom: 0, frostAura: 0, holyNova: 0, timeField: 0, guardian: 0, manaFlow: 0, echo: 0, burn: 0, rage: 0 },
+      abilityTimers: { frost: 0, holy: 0, time: 0 },
+      guardianUsed: false,
+      rageStacks: 0, rageT: 0,
+      echoFx: 0
     };
 
     player.maxhp = (100 + num(pInfo.HP, 3) * 26) * (1 + loopCount * 0.28);
@@ -347,7 +361,7 @@
 
     // 角色魔法書：config Players[].Magic 指定技能 ID，沒有設定時依職業給預設魔法
     var magicIds = Array.isArray(pInfo.Magic) && pInfo.Magic.length ? pInfo.Magic
-      : (player.spriteKey === "bow" ? [101, 102, 107, 110] : [100, 105, 103, 104]);
+      : (player.spriteKey === "bow" ? [101, 102, 107, 110, 106, 111] : [100, 105, 103, 104, 112, 109]);
     player.spells = magicIds.map(function (id, si) {
       var sk = skillById(id);
       if (!sk || !sk.Kind) return null;
@@ -356,7 +370,8 @@
         index: si,
         cd: 1.2 + si * 0.8,
         cdMax: Math.max(1, num(sk.CD, 6)),
-        unlock: Math.max(1, num(sk.UnlockLevel, si >= 3 ? 4 : 1))
+        unlock: Math.max(1, num(sk.UnlockLevel, si >= 3 ? 4 : 1)),
+        rank: 1
       };
     }).filter(Boolean);
 
@@ -379,6 +394,7 @@
       emitters: [],
       time: 0,
       kills: 0,
+      boomLock: false,
       roundIndex: -1,
       roundTimer: 0,
       roundActive: false,
@@ -434,6 +450,7 @@
         en.atk = 0;
       }
       G.paused = true; // 只做美術預覽，不推進戰鬥
+      G.showcase = true;
     }
 
     nextRound();
@@ -558,6 +575,49 @@
     if (bosses.length) showBossIntro(bosses[0], bosses.length > 1);
   }
 
+  // 怪物 AI 原型：讓走路與進攻方式不再全部直線衝鋒
+  var OFFENSIVE_SKILLS = ["e_bolt", "e_spread", "e_chain", "e_meteor", "e_nova", "e_poison", "e_sand", "e_ice", "e_drain", "e_web"];
+  var SUPPORT_SKILLS = ["e_heal", "e_shield", "e_enrage", "e_curse", "e_summon", "e_charge"];
+
+  function pickEnemyAi(info, isElite, castSkills, isBoss) {
+    if (isBoss) return "boss";
+    var kinds = (castSkills || []).map(function (s) { return s.Kind; });
+    var support = kinds.some(function (k) { return SUPPORT_SKILLS.indexOf(k) >= 0; });
+    var ranged = kinds.some(function (k) { return OFFENSIVE_SKILLS.indexOf(k) >= 0; });
+    var tier = num(info && info.Tier, 1);
+    var spd = num(info && info.SPD, 2);
+    var roll = Math.random();
+    if (isElite) return roll < 0.6 ? "charger" : "brute";
+    if (support && !ranged) return "support";
+    if (ranged) {
+      // 會遠程技能的小怪也要有近身、繞行、游擊等不同走位
+      if (roll < 0.30) return "skirmisher";
+      if (roll < 0.55) return "circler";
+      if (roll < 0.75) return "zigzag";
+      if (roll < 0.90) return "chaser";
+      return "charger";
+    }
+    if (tier >= 4) return roll < 0.5 ? "charger" : (roll < 0.8 ? "brute" : "chaser");
+    if (spd >= 4.2) return roll < 0.5 ? "circler" : (roll < 0.8 ? "charger" : "zigzag");
+    return roll < 0.4 ? "chaser" : (roll < 0.7 ? "zigzag" : (roll < 0.9 ? "circler" : "charger"));
+  }
+
+  function preferredRangeFor(ai) {
+    if (ai === "skirmisher") return 240 + rand(0, 80);
+    if (ai === "support") return 280 + rand(0, 80);
+    if (ai === "circler") return 105 + rand(0, 40);
+    if (ai === "charger") return 340;
+    return 0;
+  }
+
+  function atkStyleFor(info, isElite) {
+    var spd = num(info && info.SPD, 2);
+    var tier = num(info && info.Tier, 1);
+    if (isElite || tier >= 4) return Math.random() < 0.5 ? "slam" : "slash";
+    if (spd >= 4.2) return "sting";
+    return Math.random() < 0.5 ? "bite" : "slash";
+  }
+
   function spawnEnemy(id, level, isBoss, prefix, bossInfo, elite) {
     bossInfo = bossInfo || {};
     if (!isBoss && G.enemies.length >= MAX_ENEMIES) return null;
@@ -580,6 +640,8 @@
     var isElite = !!elite && !isBoss;
     var eliteHp = isElite ? 2.35 : 1;
     var eliteAtk = isElite ? 1.3 : 1;
+    var castSkills = isBoss ? [] : enemyCastSkills(info, isElite);
+    var ai = pickEnemyAi(info, isElite, castSkills, isBoss);
 
     var maxhp = (24 + num(info.HP, 3) * 18) * hpScale * (isBoss ? 4.2 : 1) * hpMul * eliteHp * (1 + loopCount * 0.55);
     var shownName = (isBoss && bossInfo.Name) ? bossInfo.Name : (info.Name || "怪物");
@@ -614,7 +676,7 @@
       dash: null,
       auraT: 0,
       // 怪物技能與狀態
-      castSkills: isBoss ? [] : enemyCastSkills(info, isElite),
+      castSkills: castSkills,
       castCd: rand(1.8, 4.2),
       casting: null,
       slowT: 0, slowMul: 1,
@@ -622,7 +684,24 @@
       shield: 0, shieldT: 0,
       atkBuffT: 0, atkBuff: 1,
       spdMul: 1,
-      castGlow: 0
+      castGlow: 0,
+      // 動作與 AI
+      animPhase: Math.random() * Math.PI * 2,
+      animSpeed: rand(-0.8, 1.6),
+      face: 1,
+      ai: ai,
+      aiTimer: rand(0.3, 1.6),
+      preferred: preferredRangeFor(ai),
+      strafe: Math.random() < 0.5 ? -1 : 1,
+      dashCd: rand(1.6, 3.6),
+      windup: 0,
+      atkStyle: atkStyleFor(info, isElite),
+      burnT: 0, burnDps: 0,
+      errCount: 0,
+      lastHp: maxhp,
+      healLock: 0,
+      stallT: 0,
+      enragedStall: false
     };
     G.enemies.push(e);
     if (isBoss) {
@@ -642,9 +721,11 @@
       var sk = skillById(num(s && s.SkillID, 0));
       if (sk && sk.Kind && sk.Kind.indexOf("e_") === 0) out.push(sk);
     });
-    if (!out.length && num(info && info.Tier, 0) >= 3) {
-      var fb = skillById(200);
-      if (fb) out.push(fb);
+    // 任何小怪至少帶一招有特效的攻擊技能；低階用魔彈、高階用扇形吐息
+    var hasOffense = out.some(function (s) { return OFFENSIVE_SKILLS.indexOf(s.Kind) >= 0; });
+    if (!hasOffense) {
+      var fb = skillById(num(info && info.Tier, 0) >= 3 ? 201 : 200) || skillById(200);
+      if (fb && out.indexOf(fb) < 0) out.push(fb);
     }
     if (isElite && out.length) {
       var extra = skillById(206) || skillById(200);
@@ -669,6 +750,12 @@
     }
     e.hp -= dmg;
     e.hitFlash = 0.12;
+    // 烈焰附魔：普攻與魔法命中時點燃小怪
+    var pl = G.player;
+    if (pl && pl.abilities && pl.abilities.burn > 0 && !opts.noBurn && !e.isBoss) {
+      e.burnT = Math.max(e.burnT || 0, 2.6);
+      e.burnDps = Math.max(e.burnDps || 0, pl.atk * 0.16 * pl.abilities.burn);
+    }
     if (e.hp > 0 && !e.isBoss) {
       var kx = e.x - G.player.x, ky = e.y - G.player.y;
       var kd = Math.hypot(kx, ky) || 1;
@@ -688,9 +775,14 @@
   function killEnemy(e) {
     if (e.dying) return;
     e.dying = true;
-    e.dieT = 0.6;
+    e.dieT = 1.0;
     e.hp = 0;
     e.state = "die";
+    e.stateT = 0;
+    e.casting = null;
+    e.windup = 0;
+    e.dash = null;
+    e.burnT = 0;
     G.kills++;
     if (e.isBoss) {
       G.bosses = G.bosses.filter(function (b) { return b !== e; });
@@ -704,6 +796,18 @@
     if (p.lifesteal > 0) {
       var heal = p.maxhp * p.lifesteal;
       p.hp = Math.min(p.maxhp, p.hp + heal);
+    }
+    // 擊殺爆裂／致命節奏
+    if (p.abilities && !e.isBoss) {
+      if (p.abilities.killBoom > 0 && !G.boomLock) {
+        G.boomLock = true;
+        damageArea(e.x, e.y, 66 + p.abilities.killBoom * 18, p.atk * 0.55 * p.abilities.killBoom, "#ff8a3d", {});
+        G.boomLock = false;
+      }
+      if (p.abilities.rage > 0) {
+        p.rageStacks = Math.min(10, (p.rageStacks || 0) + 1);
+        p.rageT = 5;
+      }
     }
     var orbs = e.isBoss ? 10 : (e.elite ? 4 : 1);
     for (var oi = 0; oi < orbs; oi++) {
@@ -719,11 +823,15 @@
   }
 
   // ---------------------------------------------------------------- boss / hazard
-  function damagePlayer(amount, color) {
+  function damagePlayer(amount, color, source) {
     var p = G.player;
     if (p.invT > 0 || p.hp <= 0) return;
     p.invT = 0.26;
     var raw = Math.max(1, amount - p.def * 0.35);
+    // 荊棘之甲：反彈部分近戰傷害
+    if (source && !source.dying && p.abilities && p.abilities.thorn > 0) {
+      dealDamage(source, raw * 0.22 * p.abilities.thorn, { noCrit: true });
+    }
     // 護盾先吸收傷害
     if (p.shield > 0) {
       var absorb = Math.min(p.shield, raw);
@@ -736,7 +844,21 @@
     p.hp -= raw;
     p.hitFlash = 0.15;
     G.floaters.push({ x: p.x, y: p.y - 30, text: "-" + Math.round(raw), t: 0.7, color: color || "#ff7b7b" });
-    if (p.hp <= 0) { p.hp = 0; endGame(false); }
+    if (p.hp <= 0) {
+      // 守護天使：每場一次，瀕死時以 50% 生命復活
+      if (p.abilities && p.abilities.guardian > 0 && !p.guardianUsed) {
+        p.guardianUsed = true;
+        p.hp = p.maxhp * 0.5;
+        p.invT = 2.2;
+        p.shield = Math.max(p.shield, p.maxhp * 0.25);
+        p.shieldT = 6;
+        toast("守護天使發動！");
+        G.fx.push({ type: "ring", x: p.x, y: p.y - 16, r: 30, max: 260, t: 0.8, color: "#ffe9a8" });
+        return;
+      }
+      p.hp = 0;
+      endGame(false);
+    }
   }
 
   function addBullet(x, y, ang, speed, dmg, color, r, opts) {
@@ -781,6 +903,23 @@
         }
       }
       e.auraT += dt;
+      // 防卡死：霸主長時間血量沒有下降時，關閉治療並進入狂暴
+      if (!e.dying) {
+        if (e.hp < (e.lastHp || e.maxhp) - 0.5) {
+          e.lastHp = e.hp;
+          e.stallT = 0;
+        } else {
+          e.stallT = (e.stallT || 0) + dt;
+        }
+        if (e.stallT > 18 && !e.enragedStall) {
+          e.enragedStall = true;
+          e.healLock = 9999;
+          e.atkBuff = 1.35;
+          e.spdMul = 1.15;
+          e.atkBuffT = 9999;
+          toast("霸主陷入狂暴，治療失效！");
+        }
+      }
 
       // 衝撞中：先蓄力再高速位移
       if (e.dash) {
@@ -941,13 +1080,16 @@
           { boss: true, slow: 0.5 });
       }
     } else if (kind === "heal") {
-      var healAmt = e.maxhp * 0.12;
-      e.hp = Math.min(e.maxhp, e.hp + healAmt);
-      G.floaters.push({ x: e.x, y: e.y - 70, text: "+" + Math.round(healAmt), t: 0.9, color: "#8fffb0" });
-      G.fx.push({ type: "ring", x: e.x, y: e.y, r: 24, max: 160, t: 0.5, color: "#8fffb0" });
-      // 同時治療附近的霸主／精英
+      if (e.healLock <= 0) {
+        var healAmt = e.maxhp * 0.05;
+        e.hp = Math.min(e.maxhp, e.hp + healAmt);
+        e.healLock = 9;
+        G.floaters.push({ x: e.x, y: e.y - 70, text: "+" + Math.round(healAmt), t: 0.9, color: "#8fffb0" });
+        G.fx.push({ type: "ring", x: e.x, y: e.y, r: 24, max: 160, t: 0.5, color: "#8fffb0" });
+      }
+      // 同時治療附近的霸主／精英（小怪不補霸主）
       G.enemies.forEach(function (ally) {
-        if (ally === e || ally.dying) return;
+        if (ally === e || ally.dying || ally.isBoss) return;
         if (dist2(ally, e) < 220 * 220) {
           ally.hp = Math.min(ally.maxhp, ally.hp + ally.maxhp * 0.08);
           G.fx.push({ type: "ring", x: ally.x, y: ally.y, r: 12, max: 60, t: 0.3, color: "#8fffb0" });
@@ -1128,7 +1270,7 @@
     if (p.atkCd <= 0) {
       var target = nearestEnemy(p, 420);
       if (target) {
-        p.atkCd = Math.max(0.14, num(atkSkill.CD, 2) * (p.atkCdScale || 1));
+        p.atkCd = Math.max(0.14, num(atkSkill.CD, 2) * (p.atkCdScale || 1) * (1 - 0.03 * (p.rageStacks || 0)));
         var percent = param(atkSkill, "Percent", 100);
         var count = Math.max(1, param(atkSkill, "Count", 1));
         var dmg = p.atk * percent / 100;
@@ -1267,6 +1409,43 @@
     }
   }
 
+  // 升級取得的被動能力：定期光環、擊殺爆裂、燃燒、荊棘等
+  function updateAbilities(dt) {
+    var p = G.player;
+    var ab = p.abilities;
+    if (!ab) return;
+    if (p.rageT > 0) {
+      p.rageT -= dt;
+      if (p.rageT <= 0) { p.rageT = 0; p.rageStacks = 0; }
+    }
+    if (ab.frostAura > 0) {
+      p.abilityTimers.frost -= dt;
+      if (p.abilityTimers.frost <= 0) {
+        p.abilityTimers.frost = Math.max(2.2, 3.8 - ab.frostAura * 0.35);
+        damageArea(p.x, p.y - 6, 150 + ab.frostAura * 18, p.atk * 0.55 * ab.frostAura, "#8fd8ff", { slow: 0.4, slowT: 1.9 });
+        pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 10, r: 24, max: 180 + ab.frostAura * 18, t: 0.45, color: "#8fd8ff" }, MAX_FX);
+      }
+    }
+    if (ab.holyNova > 0) {
+      p.abilityTimers.holy -= dt;
+      if (p.abilityTimers.holy <= 0) {
+        p.abilityTimers.holy = Math.max(3.0, 5.4 - ab.holyNova * 0.5);
+        damageArea(p.x, p.y - 8, 230 + ab.holyNova * 22, p.atk * 0.85 * ab.holyNova, "#ffe9a8", { stun: 0.35 });
+        pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 14, r: 30, max: 260 + ab.holyNova * 20, t: 0.55, color: "#ffe9a8" }, MAX_FX);
+      }
+    }
+    if (ab.timeField > 0) {
+      p.abilityTimers.time -= dt;
+      if (p.abilityTimers.time <= 0) {
+        p.abilityTimers.time = Math.max(5.0, 9.5 - ab.timeField * 0.8);
+        pushCapped(G.zones, {
+          x: p.x, y: p.y, r: 180 + ab.timeField * 20, delay: 0, life: 3.4, max: 3.4,
+          dps: p.atk * 0.25 * ab.timeField, color: "#b78bff", friendly: true, tick: 0, slow: 0.55
+        }, MAX_ZONES);
+      }
+    }
+  }
+
   function shouldAutoCast(sk) {
     var p = G.player;
     if (!sk) return false;
@@ -1291,12 +1470,13 @@
       if (manual) toast(sk.Name + " 冷卻中");
       return false;
     }
-    var cost = spellCost(sk);
+    var cost = Math.round(spellCost(sk) * Math.pow(0.97, Math.max(0, (slot.rank || 1) - 1)));
     if (p.mp < cost) {
       if (manual) toast("魔力不足");
       return false;
     }
-    var power = p.atk * num(sk.Percent, 150) / 100 * magicPower(p);
+    var rank = Math.max(1, slot.rank || 1);
+    var power = p.atk * num(sk.Percent, 150) / 100 * magicPower(p) * (1 + (rank - 1) * 0.18);
     var color = sk.Color || "#9fd8ff";
     var target = nearestEnemy(p, 620);
     var did = false;
@@ -1327,7 +1507,7 @@
       did = true;
     } else if (sk.Kind === "heal") {
       if (p.hp >= p.maxhp && !manual) return false;
-      var heal = p.maxhp * num(sk.Percent, 30) / 100;
+      var heal = p.maxhp * num(sk.Percent, 30) / 100 * (1 + (rank - 1) * 0.18);
       p.hp = Math.min(p.maxhp, p.hp + heal);
       p.regenT = 3;
       p.regen = p.maxhp * 0.03;
@@ -1335,7 +1515,7 @@
       G.fx.push({ type: "ring", x: p.x, y: p.y - 16, r: 26, max: 170, t: 0.5, color: color });
       did = true;
     } else if (sk.Kind === "shield") {
-      var amount = p.maxhp * num(sk.Percent, 35) / 100 * (p.shieldPower || 1);
+      var amount = p.maxhp * num(sk.Percent, 35) / 100 * (p.shieldPower || 1) * (1 + (rank - 1) * 0.18);
       p.shield = Math.max(p.shield, amount);
       p.shieldT = 9;
       G.fx.push({ type: "ring", x: p.x, y: p.y - 16, r: 20, max: 90, t: 0.45, color: color });
@@ -1402,7 +1582,13 @@
 
     if (did) {
       p.mp = Math.max(0, p.mp - cost);
-      slot.cd = Math.max(0.5, slot.cdMax * (p.spellCdScale || 1));
+      slot.cd = Math.max(0.5, slot.cdMax * (p.spellCdScale || 1) * Math.pow(0.96, rank - 1));
+      // 連鎖反應：有機率立刻縮短冷卻，形成連續詠唱
+      if (p.abilities && p.abilities.echo > 0 && Math.random() < 0.1 * p.abilities.echo) {
+        slot.cd *= 0.4;
+        p.echoFx = 0.5;
+        pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 16, r: 22, max: 120, t: 0.35, color: color }, MAX_FX);
+      }
       if (sk.Icon && p.spells.length) {
         // 施法時角色面向最近的敵人
         if (target) p.face = target.x >= p.x ? 1 : -1;
@@ -1525,7 +1711,9 @@
     showUpgrades();
   }
 
-  var UPGRADES = [
+  var SPELL_RANK_MAX = 5;
+
+  var STAT_UPGRADES = [
     { name: "力量", desc: "攻擊力 +12%", icon: 10028, apply: function (p) { p.atk *= 1.12; } },
     { name: "體魄", desc: "最大生命 +15%", icon: 10007, apply: function (p) { p.maxhp *= 1.15; p.hp += p.maxhp * 0.1; } },
     { name: "守護", desc: "防禦 +20%", icon: 90036, apply: function (p) { p.def *= 1.2; } },
@@ -1541,19 +1729,99 @@
     { name: "聖盾強化", desc: "護盾效果 +30%", icon: 90036, apply: function (p) { p.shieldPower = (p.shieldPower || 1) * 1.3; } }
   ];
 
+  // 升級時可取得的被動能力（與純數值卡區隔）
+  var ABILITY_UPGRADES = [
+    { key: "burn", name: "烈焰附魔", icon: 10001, max: 3,
+      desc: function (r) { return "命中附加燃燒，每秒 " + (16 * r) + "% 攻擊力，持續 2.6 秒"; } },
+    { key: "frostAura", name: "霜凍光環", icon: 10107, max: 3,
+      desc: function (r) { return "每 " + (3.8 - r * 0.35).toFixed(1) + " 秒釋放冰霜光環，傷害並減速"; } },
+    { key: "holyNova", name: "神聖新星", icon: 90012, max: 3,
+      desc: function (r) { return "每 " + (5.4 - r * 0.5).toFixed(1) + " 秒降下聖光，範圍傷害並暈眩"; } },
+    { key: "timeField", name: "時光領域", icon: 10139, max: 2,
+      desc: function (r) { return "每 " + (9.5 - r * 0.8).toFixed(1) + " 秒留下時光領域，持續緩速敵人"; } },
+    { key: "killBoom", name: "擊殺爆裂", icon: 10015, max: 3,
+      desc: function (r) { return "擊殺小怪時爆炸，對周圍造成 " + (55 * r) + "% 攻擊力"; } },
+    { key: "thorn", name: "荊棘之甲", icon: 90036, max: 3,
+      desc: function (r) { return "受近戰攻擊時反彈 " + (22 * r) + "% 傷害"; } },
+    { key: "echo", name: "連鎖反應", icon: 10051, max: 3,
+      desc: function (r) { return "施法後有 " + (10 * r) + "% 機率縮短 60% 冷卻"; } },
+    { key: "rage", name: "致命節奏", icon: 10111, max: 3,
+      desc: function () { return "擊殺疊加攻速，每層 -3% 攻擊間隔（最多 10 層）"; } },
+    { key: "manaFlow", name: "魔力湧動", icon: 30074, max: 3,
+      desc: function () { return "最大魔力 +10%，魔力回復 +15%"; },
+      onApply: function (p) { p.maxmp *= 1.1; p.mpRegen *= 1.15; p.mp = Math.min(p.maxmp, p.mp + p.maxmp * 0.1); } },
+    { key: "guardian", name: "守護天使", icon: 90003, max: 1,
+      desc: function () { return "每場一次，瀕死時以 50% 生命復活並獲得護盾"; } }
+  ];
+
+  function spellRankCard(slot, sk) {
+    var next = Math.min(SPELL_RANK_MAX, (slot.rank || 1) + 1);
+    var effect = (sk.Kind === "heal" || sk.Kind === "shield") ? "效果" : "傷害";
+    return {
+      type: "魔法",
+      name: sk.Name,
+      icon: sk.Icon,
+      desc: "魔法精研 " + next + "/" + SPELL_RANK_MAX + "：" + effect + " +18%、冷卻 -4%、消耗 -3%",
+      apply: function () { slot.rank = next; }
+    };
+  }
+
+  function abilityCard(a, rank) {
+    var next = Math.min(a.max, rank + 1);
+    return {
+      type: "能力",
+      name: a.name,
+      icon: a.icon,
+      desc: a.desc(next) + "（" + next + "/" + a.max + "）",
+      apply: function (p) {
+        p.abilities[a.key] = next;
+        if (a.onApply) a.onApply(p, next);
+      }
+    };
+  }
+
+  function buildUpgradeChoices() {
+    var p = G.player;
+    var magic = [];
+    (p.spells || []).forEach(function (slot) {
+      if ((slot.rank || 1) >= SPELL_RANK_MAX) return;
+      if (p.level < slot.unlock) return;
+      var sk = skillById(slot.id);
+      if (sk) magic.push(spellRankCard(slot, sk));
+    });
+    var abilities = [];
+    ABILITY_UPGRADES.forEach(function (a) {
+      var rank = (p.abilities && p.abilities[a.key]) || 0;
+      if (rank < a.max) abilities.push(abilityCard(a, rank));
+    });
+    var stats = STAT_UPGRADES.map(function (u) {
+      return { type: "屬性", name: u.name, desc: u.desc, icon: u.icon, apply: u.apply };
+    });
+    var special = magic.concat(abilities);
+    var picks = [];
+    // 至少保證一張魔法／能力卡，讓升級不是只有數值
+    if (special.length) {
+      picks.push(special.splice(Math.floor(Math.random() * special.length), 1)[0]);
+    }
+    var rest = special.concat(stats);
+    while (picks.length < 3 && rest.length) {
+      picks.push(rest.splice(Math.floor(Math.random() * rest.length), 1)[0]);
+    }
+    return picks;
+  }
+
   function showUpgrades() {
     if (G.upPending <= 0) return;
     G.paused = true;
     var list = document.getElementById("upgradeList");
     list.innerHTML = "";
-    var pool = UPGRADES.slice();
-    for (var i = 0; i < 3 && pool.length; i++) {
-      var idx = Math.floor(Math.random() * pool.length);
-      var up = pool.splice(idx, 1)[0];
+    var picks = buildUpgradeChoices();
+    for (var i = 0; i < picks.length; i++) {
       (function (u) {
         var d = document.createElement("div");
-        d.className = "card upgrade";
-        d.innerHTML = '<img class="ico" alt=""><div class="name"></div><div class="desc"></div>';
+        d.className = "card upgrade" + (u.type === "魔法" ? " t-magic" : (u.type === "能力" ? " t-ability" : " t-stat"));
+        d.innerHTML = '<span class="tag"></span><img class="ico" alt=""><div class="name"></div><div class="desc"></div>';
+        d.querySelector(".tag").textContent = u.type || "屬性";
         var icoEl = d.querySelector("img.ico");
         if (u.icon && window.ART) {
           icoEl.src = ART.skillIcon(u.icon);
@@ -1568,25 +1836,35 @@
           else { levelUpEl.classList.add("hidden"); G.paused = false; }
         });
         list.appendChild(d);
-      })(up);
+      })(picks[i]);
     }
     levelUpEl.classList.remove("hidden");
   }
 
   // ---------------------------------------------------------------- 怪物技能
+  function enemyNeedsHeal(e) {
+    if (e.hp < e.maxhp * 0.72) return true;
+    for (var i = 0; i < G.enemies.length; i++) {
+      var a = G.enemies[i];
+      if (a === e || a.dying || a.isBoss) continue;
+      if (a.hp < a.maxhp * 0.55 && dist2(a, e) < 200 * 200) return true;
+    }
+    return false;
+  }
+
   function pickEnemySkill(e) {
     var list = e.castSkills || [];
     if (!list.length) return null;
-    // 血量低時優先治療
-    if (e.hp < e.maxhp * 0.7) {
-      for (var i = 0; i < list.length; i++) if (list[i].Kind === "e_heal") return list[i];
+    var heal = null;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].Kind === "e_heal") { heal = list[i]; break; }
     }
-    for (var s = 0; s < list.length; s++) {
-      var sk = list[(e.castIndex || 0) % list.length];
-      e.castIndex = (e.castIndex || 0) + 1;
-      if (sk) return sk;
-    }
-    return list[0];
+    if (heal && enemyNeedsHeal(e)) return heal;
+    var offense = list.filter(function (s) { return s.Kind !== "e_heal"; });
+    if (!offense.length) return heal || list[0];
+    var sk = offense[(e.castIndex || 0) % offense.length];
+    e.castIndex = (e.castIndex || 0) + 1;
+    return sk || offense[0];
   }
 
   function startEnemyCast(e, sk) {
@@ -1594,6 +1872,8 @@
     e.casting = { sk: sk, t: castTime, max: castTime };
     e.state = "special";
     e.stateT = castTime + 0.2;
+    e.castGlow = 1;
+    e.face = G.player.x >= e.x ? 1 : -1;
     pushCapped(G.fx, {
       type: "cast", x: e.x, y: e.y - 8, t: castTime, max: castTime,
       color: sk.Color || "#b78bff", r: e.r + 12
@@ -1630,13 +1910,17 @@
         dps: dmg * 2, color: color, meteor: true, tick: 0
       }, MAX_ZONES);
     } else if (kind === "e_heal") {
-      var healAmt = e.maxhp * 0.18;
-      e.hp = Math.min(e.maxhp, e.hp + healAmt);
-      pushCapped(G.floaters, { x: e.x, y: e.y - 40, text: "+" + Math.round(healAmt), t: 0.8, color: "#8fffb0" }, MAX_FLOATERS);
-      G.fx.push({ type: "ring", x: e.x, y: e.y, r: 12, max: 80, t: 0.4, color: "#8fffb0" });
+      // 小怪可以互相治療，但霸主不接受小怪治療，避免整場卡在回血循環
+      var healAmt = e.maxhp * (e.isBoss ? 0.035 : 0.18);
+      if (!e.isBoss || e.healLock <= 0) {
+        e.hp = Math.min(e.maxhp, e.hp + healAmt);
+        if (e.isBoss) e.healLock = 8;
+        pushCapped(G.floaters, { x: e.x, y: e.y - 40, text: "+" + Math.round(healAmt), t: 0.8, color: "#8fffb0" }, MAX_FLOATERS);
+        G.fx.push({ type: "ring", x: e.x, y: e.y, r: 12, max: 80, t: 0.4, color: "#8fffb0" });
+      }
       for (var hi = 0; hi < G.enemies.length; hi++) {
         var he = G.enemies[hi];
-        if (he !== e && !he.dying && dist2(he, e) < 190 * 190) {
+        if (he !== e && !he.dying && !he.isBoss && dist2(he, e) < 190 * 190) {
           he.hp = Math.min(he.maxhp, he.hp + he.maxhp * 0.08);
         }
       }
@@ -1696,12 +1980,106 @@
         }
       }
     }
+
+    // 統一的施法爆發特效：讓小怪技能有明確的起手與元素辨識度
+    if (kind !== "e_heal" && kind !== "e_shield" && kind !== "e_enrage") {
+      pushCapped(G.fx, {
+        type: "spark", x: e.x + Math.cos(ang) * 20, y: e.y - 26 + Math.sin(ang) * 10,
+        r: 13, t: 0.24, max: 0.24, color: color
+      }, MAX_FX);
+      if (kind === "e_nova" || kind === "e_spread") {
+        pushCapped(G.fx, { type: "ring", x: e.x, y: e.y - 8, r: e.r, max: e.r * 3.2, t: 0.3, color: color }, MAX_FX);
+      }
+    }
+  }
+
+  function spawnCastRing(e, color, dur) {
+    pushCapped(G.fx, {
+      type: "cast", x: e.x, y: e.y - 8, t: dur || 0.5, max: dur || 0.5,
+      color: color || "#b78bff", r: e.r + 10
+    }, MAX_FX);
+  }
+
+  function enemyDashStep(e, dt, p) {
+    e.dash.t -= dt;
+    if (e.dash.t > 0) {
+      e.state = "special";
+      return;
+    }
+    var spd = num(e.dash.spd, 520);
+    e.x = clamp(e.x + Math.cos(e.dash.ang) * spd * dt, e.r, G.worldW - e.r);
+    e.y = clamp(e.y + Math.sin(e.dash.ang) * spd * dt, e.r, G.worldH - e.r);
+    e.state = "attack";
+    e.stateT = 0.22;
+    if (!e.dash.hit && dist2(e, p) < (e.r + p.r + 14) * (e.r + p.r + 14)) {
+      e.dash.hit = true;
+      damagePlayer(e.atk * 0.85, "#ffb15c", e);
+      pushCapped(G.fx, { type: "slash", x: e.x, y: e.y - 10, r: e.r + 22, t: 0.18, color: "#ffd166" }, MAX_FX);
+    }
+    e.dash.dur -= dt;
+    if (e.dash.dur <= 0) {
+      e.dash = null;
+      e.dashCd = rand(2.8, 5.2);
+    }
+  }
+
+  function enemySteer(e, dx, dy, d, dt) {
+    var nx = dx / (d || 1), ny = dy / (d || 1);
+    var spd = e.spd * (e.spdMul || 1) * (e.slowT > 0 ? e.slowMul : 1);
+    if (Math.abs(dx) > 4) e.face = dx > 0 ? 1 : -1;
+    var ai = e.ai || "chaser";
+    var vx = nx * spd, vy = ny * spd;
+    var tang = e.strafe || 1;
+
+    if (ai === "zigzag") {
+      var wob = Math.sin(e.aiTimer * 4.2 + e.animPhase) * 0.9;
+      vx = (nx - ny * wob) * spd;
+      vy = (ny + nx * wob) * spd;
+    } else if (ai === "circler") {
+      var ring = e.preferred || 120;
+      var radial = d > ring * 1.15 ? 0.95 : (d < ring * 0.72 ? -0.85 : 0.1);
+      vx = (nx * radial - ny * tang * 0.85) * spd;
+      vy = (ny * radial + nx * tang * 0.85) * spd;
+    } else if (ai === "skirmisher" || ai === "support") {
+      var pref = e.preferred || 260;
+      var radial2 = d > pref + 45 ? 0.95 : (d < pref - 55 ? -0.95 : 0);
+      var tang2 = radial2 === 0 ? 0.8 : 0.28;
+      vx = (nx * radial2 - ny * tang * tang2) * spd;
+      vy = (ny * radial2 + nx * tang * tang2) * spd;
+    } else if (ai === "charger") {
+      if (e.windup <= 0 && e.dashCd <= 0 && d < 430 && d > 80 && e.stunT <= 0) {
+        e.windup = 0.45;
+        e.state = "special";
+        e.stateT = 0.5;
+        e.dashCd = rand(3.4, 5.6);
+        spawnCastRing(e, "#ffb15c", 0.45);
+        return { vx: 0, vy: 0, moving: false };
+      }
+      vx = nx * spd * 0.72;
+      vy = ny * spd * 0.72;
+    } else if (ai === "brute") {
+      vx = nx * spd * 0.82;
+      vy = ny * spd * 0.82;
+    }
+    return { vx: vx, vy: vy, moving: true };
+  }
+
+  function enemyMeleeFx(e, ang) {
+    var color = e.elite ? "#ffd166" : "#ffb15c";
+    if (e.atkStyle === "slam") {
+      pushCapped(G.fx, { type: "ring", x: e.x + Math.cos(ang) * 16, y: e.y + Math.sin(ang) * 16, r: 10, max: 58, t: 0.28, color: color }, MAX_FX);
+    } else if (e.atkStyle === "sting") {
+      pushCapped(G.fx, { type: "slash", x: e.x + Math.cos(ang) * 10, y: e.y - 8 + Math.sin(ang) * 10, r: e.r + 16, t: 0.16, color: "#ffe066" }, MAX_FX);
+    } else {
+      pushCapped(G.fx, { type: "slash", x: e.x + Math.cos(ang) * 12, y: e.y - 10 + Math.sin(ang) * 12, r: e.r + 18, t: 0.18, color: color }, MAX_FX);
+    }
   }
 
   function updateEnemies(dt) {
     var p = G.player;
     for (var i = G.enemies.length - 1; i >= 0; i--) {
       var e = G.enemies[i];
+      try {
 
       // 死亡動畫播完才移除
       if (e.dying) {
@@ -1711,13 +2089,17 @@
         continue;
       }
 
-      // 霸主衝撞由 updateBosses() 控制位移
+      // 霸主衝撞由 updateBosses() 控制位移；小怪衝鋒在此處理
       if (e.dash) {
+        if (!e.isBoss) enemyDashStep(e, dt, p);
         e.hitFlash = Math.max(0, e.hitFlash - dt);
         continue;
       }
 
       // 狀態計時
+      e.aiTimer += dt;
+      if (e.dashCd > 0) e.dashCd -= dt;
+      if (e.healLock > 0) e.healLock -= dt;
       if (e.slowT > 0) {
         e.slowT -= dt;
         if (e.slowT <= 0) { e.slowT = 0; e.slowMul = 1; }
@@ -1734,6 +2116,15 @@
       if (e.atkBuffT > 0) {
         e.atkBuffT -= dt;
         if (e.atkBuffT <= 0) { e.atkBuffT = 0; e.atkBuff = 1; e.spdMul = 1; }
+      }
+      // 燃燒持續傷害
+      if (e.burnT > 0) {
+        e.burnT -= dt;
+        e.hp -= e.burnDps * dt;
+        if (Math.random() < dt * 7) {
+          pushCapped(G.fx, { type: "spark", x: e.x + rand(-8, 8), y: e.y - 16 + rand(-10, 10), r: 9, t: 0.22, max: 0.22, color: "#ff8a3d" }, MAX_FX);
+        }
+        if (e.hp <= 0) { killEnemy(e); continue; }
       }
 
       // 正在詠唱技能
@@ -1756,9 +2147,11 @@
 
       // 技能判定（近戰距離外也能施放）
       if (!e.isBoss && e.castSkills && e.castSkills.length && e.stunT <= 0) {
-        var first = e.castSkills[0];
-        var castRange = num(first.Range, 430);
-        if (d < castRange) {
+        var castRange = 0;
+        for (var cs = 0; cs < e.castSkills.length; cs++) {
+          castRange = Math.max(castRange, num(e.castSkills[cs].Range, 430));
+        }
+        if (d < Math.max(260, castRange)) {
           e.castCd -= dt;
           if (e.castCd <= 0) {
             var sk = pickEnemySkill(e);
@@ -1772,19 +2165,33 @@
         }
       }
 
-      var moveSpd = e.spd * (e.spdMul || 1) * (e.slowT > 0 ? e.slowMul : 1);
-      if (d > e.r + p.r + 2) {
-        e.x += dx / d * moveSpd * dt;
-        e.y += dy / d * moveSpd * dt;
+      // 衝鋒蓄力：停下腳步、亮起警示，之後高速撲向玩家
+      if (e.windup > 0) {
+        e.windup -= dt;
+        if (e.windup <= 0) {
+          e.dash = { ang: Math.atan2(dy, dx), t: 0.12, dur: 0.3, hit: false, spd: 540 };
+        }
+        if (e.stateT <= 0) { e.state = "special"; e.stateT = 0.2; }
+        e.hitFlash = Math.max(0, e.hitFlash - dt);
+        continue;
+      }
+
+      var steer = enemySteer(e, dx, dy, d, dt);
+      if (steer.moving) {
+        e.x = clamp(e.x + steer.vx * dt, e.r, G.worldW - e.r);
+        e.y = clamp(e.y + steer.vy * dt, e.r, G.worldH - e.r);
         if (e.stateT <= 0) e.state = "walk";
-      } else {
+      }
+      if (d <= e.r + p.r + 4) {
         if (e.stateT <= 0) e.state = "idle";
         e.atkCd -= dt;
         if (e.atkCd <= 0) {
-          e.atkCd = 1.1;
+          e.atkCd = (e.elite ? 0.95 : 1.1) + rand(-0.15, 0.2);
           e.state = "attack";
           e.stateT = 0.45;
-          damagePlayer(e.atk * (e.atkBuff || 1), "#ff7b7b");
+          var meleeAng = Math.atan2(dy, dx);
+          enemyMeleeFx(e, meleeAng);
+          damagePlayer(e.atk * (e.atkBuff || 1), "#ff7b7b", e);
           if (G.over) return;
         }
       }
@@ -1793,6 +2200,16 @@
         if (e.stateT <= 0) { e.stateT = 0; e.state = "idle"; }
       }
       e.hitFlash = Math.max(0, e.hitFlash - dt);
+      } catch (err) {
+        // 單一怪物狀態異常時隔離，避免整個戰鬥畫面卡死
+        e.errCount = (e.errCount || 0) + 1;
+        if (window.console && e.errCount <= 3) console.error("enemy update", e.name, err);
+        if (e.errCount > 6) {
+          G.enemies.splice(i, 1);
+          G.bosses = G.bosses.filter(function (b) { return b !== e; });
+          if (G.bossActive === e) G.bossActive = null;
+        }
+      }
     }
   }
 
@@ -2126,7 +2543,13 @@
       ctx.restore();
     }
 
-    ART.drawEnemy(ctx, e, sx, sy, G.time, scaleMul);
+    try {
+      ART.drawEnemy(ctx, e, sx, sy, G.time, scaleMul);
+    } catch (err) {
+      // 單一怪物素材異常時退回程序繪製，不讓整個戰鬥卡死
+      e.mon = null;
+      e.drawError = true;
+    }
 
     // 受緩速影響時加一層冰藍色調
     if (e.slowT > 0) {
@@ -2517,10 +2940,16 @@
       } else {
         var slot = p.spells[Number(chip.dataset.index)];
         if (slot) {
-          cd = Math.max(0.5, slot.cdMax * (p.spellCdScale || 1));
+          var rank = Math.max(1, slot.rank || 1);
+          cd = Math.max(0.5, slot.cdMax * (p.spellCdScale || 1) * Math.pow(0.96, rank - 1));
           cur = slot.cd;
           locked = p.level < slot.unlock;
-          noMp = p.mp < spellCost(sk);
+          noMp = p.mp < Math.round(spellCost(sk) * Math.pow(0.97, rank - 1));
+          var metaEl = chip.querySelector(".meta");
+          if (metaEl) {
+            metaEl.textContent = "MP " + Math.round(spellCost(sk) * Math.pow(0.97, rank - 1)) +
+              " · " + cd.toFixed(1) + "s · R" + rank;
+          }
         }
       }
       chip.classList.toggle("locked", locked);
@@ -2610,11 +3039,22 @@
     lastTs = ts;
 
     try {
+      // 防隱形暫停：升級佇列還在但升級面板沒顯示時，自動補顯示；佇列清空則恢復戰鬥
+      if (G.paused && !G.over && !G.showcase) {
+        var lvEl = document.getElementById("levelUp");
+        var lvHidden = !lvEl || lvEl.classList.contains("hidden");
+        if (lvHidden && G.upPending > 0) {
+          try { showUpgrades(); } catch (e) { G.paused = false; }
+        } else if (lvHidden && G.upPending <= 0) {
+          G.paused = false;
+        }
+      }
       if (!G.paused && !G.over) {
         G.time += dt;
         updatePlayer(dt);
         playerAttack(dt);
         updateMagic(dt);
+        updateAbilities(dt);
         updateBosses(dt);
         updateEnemies(dt);
         updateHazards(dt);
@@ -2781,7 +3221,9 @@
     get state() { return G; },
     get config() { return CONFIG; },
     cast: function (i) { return G ? castSpell(i | 0, true) : false; },
-    version: "2026-10-25-1"
+    gainExp: function (n) { if (G) gainExp(num(n, 0) || 0); },
+    levelUp: function () { if (G) levelUp(); },
+    version: "2026-10-25-3"
   };
 
   loadConfig();

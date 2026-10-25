@@ -89,7 +89,7 @@
 
   function loadMonster(id, states) {
     if (!id) return Promise.resolve(null);
-    states = states || ["idle", "walk", "attack", "die"];
+    states = states || ["idle", "walk", "attack", "special", "hurt", "die"];
     var set = MON[id];
     if (!set) {
       set = {};
@@ -127,6 +127,12 @@
 
   function monsterLoaded(id) {
     return !!(id && MON[id]);
+  }
+
+  function monsterStates(id) {
+    var set = id && MON[id];
+    if (!set) return [];
+    return ["idle", "walk", "attack", "special", "hurt", "die"].filter(function (k) { return !!set[k]; });
   }
 
   function clampNum(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -788,9 +794,9 @@
     }
   }
 
-  function drawShadow(ctx, sx, sy, w) {
+  function drawShadow(ctx, sx, sy, w, alpha) {
     ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.32)";
+    ctx.fillStyle = "rgba(0,0,0," + (0.32 * (alpha === undefined ? 1 : alpha)).toFixed(3) + ")";
     ctx.beginPath();
     ctx.ellipse(sx, sy - 2, w * 0.42, w * 0.16, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -851,27 +857,52 @@
   }
 
   function drawEnemy(ctx, e, sx, sy, time, scaleMul) {
-    // 原版怪物圖：依狀態挑選動畫（待機／行走／攻擊／死亡）
+    // 原版怪物圖：依狀態挑選動畫（待機／行走／攻擊／施法／受傷／死亡）
     var set = e.mon ? MON[e.mon] : null;
     if (set && (set.idle || set.walk)) {
       var state = e.dying ? "die" : (e.state || "idle");
-      var img = set[state] || set.idle || set.walk;
+      var img = set[state];
+      if (!img && state === "special") img = set.attack;
+      if (!img && state === "hurt") img = set.idle;
+      if (!img) img = set.walk || set.idle || set.attack || set.die;
+      if (!img || !img.height) return;
+
       var bossMul = e.isBoss ? 1.45 : 1;
       var targetH = clampNum(58 + (img.height - 50) * 0.72, 58, 150) * bossMul * (scaleMul || 1);
       var scale = targetH / img.height;
       var w = img.width * scale;
       var h = img.height * scale;
-      var alpha = e.dying ? clampNum((e.dieT || 0) / 0.55, 0, 1) : 1;
-      var bob = state === "walk" ? Math.abs(Math.sin(time * 9 + e.x * 0.03)) * 2
-        : Math.sin(time * 4 + e.x * 0.05) * 1;
+      // 死亡動畫至少完整播放 0.65 秒，最後 0.35 秒才淡出
+      var alpha = e.dying ? clampNum((e.dieT || 0) / 0.35, 0, 1) : 1;
+      var phase = e.animPhase || (e.x * 0.013 + e.y * 0.007);
+      var bob = 0, dxOff = 0, dyOff = 0;
+      if (state === "walk") {
+        bob = Math.abs(Math.sin(time * (7.2 + (e.animSpeed || 0)) + phase)) * 2.4;
+        dxOff = Math.sin(time * 4.2 + phase) * 0.9;
+      } else if (state === "attack") {
+        var ap = 1 - clampNum((e.stateT || 0) / 0.45, 0, 1);
+        var lunge = Math.sin(ap * Math.PI);
+        dxOff = lunge * 7 * (e.face || 1);
+        bob = -lunge * 2;
+      } else if (state === "special") {
+        bob = -2 - Math.abs(Math.sin(time * 5.4 + phase)) * 2.2;
+      } else if (state === "hurt") {
+        dxOff = Math.sin(time * 68 + phase) * 2.2;
+      } else if (state === "die") {
+        var dp = 1 - clampNum((e.dieT || 0) / 0.9, 0, 1);
+        dyOff = dp * 2;
+        dxOff = dp * 2 * (e.face || 1);
+      } else {
+        bob = Math.sin(time * 3.6 + phase) * 1.2;
+      }
 
       e.visW = w;
       e.visH = h;
-      drawShadow(ctx, sx, sy, w * 0.8);
+      drawShadow(ctx, sx, sy, w * 0.8, e.dying ? alpha * 0.6 : 1);
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.imageSmoothingEnabled = false;
-      var dx = sx - w / 2, dy = sy - h + bob;
+      var dx = sx - w / 2 + dxOff, dy = sy - h + bob + dyOff;
       ctx.drawImage(img, dx, dy, w, h);
       if (e.hitFlash > 0) {
         ctx.globalCompositeOperation = "lighter";
@@ -1045,6 +1076,7 @@
     loadMonster: loadMonster,
     loadMonsters: loadMonsters,
     monsterLoaded: monsterLoaded,
+    monsterStates: monsterStates,
     monsterDir: MON_DIR,
     monsters: MON,
     drawAmbient: drawAmbient,

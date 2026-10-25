@@ -1273,6 +1273,8 @@
     "idle": "web-assets/monsters/m068/idle.webp",
     "walk": "web-assets/monsters/m068/walk.webp",
     "attack": "web-assets/monsters/m068/attack.webp",
+    "special": "web-assets/monsters/m068/special.webp",
+    "hurt": "web-assets/monsters/m068/hurt.webp",
     "die": "web-assets/monsters/m068/die.webp"
    },
    "habitat": "【魔物名稱】妖化布卡\r\n【所屬大區】辛梅爾\r\n【具體出沒地點】秘密迴廊\r\n【出現地點數量】共 1 處"
@@ -3495,6 +3497,8 @@
     "idle": "web-assets/monsters/m185/idle.webp",
     "walk": "web-assets/monsters/m185/walk.webp",
     "attack": "web-assets/monsters/m185/attack.webp",
+    "special": "web-assets/monsters/m185/special.webp",
+    "hurt": "web-assets/monsters/m185/hurt.webp",
     "die": "web-assets/monsters/m185/die.webp"
    },
    "habitat": "【魔物名稱】澄雨瓢蟲\r\n【所屬大區】德威特島\r\n【具體出沒地點】海底通道\r\n【出現地點數量】共 1 處"
@@ -4080,6 +4084,8 @@
     "idle": "web-assets/monsters/m216/idle.webp",
     "walk": "web-assets/monsters/m216/walk.webp",
     "attack": "web-assets/monsters/m216/attack.webp",
+    "special": "web-assets/monsters/m216/special.webp",
+    "hurt": "web-assets/monsters/m216/hurt.webp",
     "die": "web-assets/monsters/m216/die.webp"
    },
    "habitat": "【魔物名稱】瑪莉花\r\n【所屬大區】芙蕾雅島\r\n【具體出沒地點】伏月之街\r\n【出現地點數量】共 1 處"

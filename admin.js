@@ -145,7 +145,7 @@
   function currentTab() { return TABS.find(function (x) { return x.id === state.tab; }); }
 
   function defaultItem(key) {
-    if (key === "Players") return { Index: 0, Name: "新角色", Desc: "", ATKSkill: 0, SpecialSkill: -1, ATK: 3, HP: 3, MP: 2, DEF: 2, SPD: 3, Magic: [100, 105, 103, 104] };
+    if (key === "Players") return { Index: 0, Name: "新角色", Desc: "", ATKSkill: 0, SpecialSkill: -1, ATK: 3, HP: 3, MP: 2, DEF: 2, SPD: 3, Magic: [100, 105, 103, 104, 112, 109] };
     if (key === "Enemies") return { ID: 0, Name: "新怪物", Desc: "", ATK: 2, DEF: 2, SPD: 2, HP: 3, MP: 0, Tier: 1, Skills: [{ SkillID: 200, Level: 1 }] };
     if (key === "Skills") return { ID: 0, Name: "新技能", Desc: "", Kind: "", Element: "", Side: "player", IsSpecial: false, IsLearnable: true, IsAutoSkill: true, CD: 2, MaxLevel: 10, MPCost: 0, UnlockLevel: 1, Params: [] };
     if (key === "Levels") return { Name: "新關卡", Difficulty: 1, MapWidth: 40, MapHeight: 40, Gimmick: { Kind: "tide", Name: "潮汐", Interval: 20 }, RoundInfos: [] };

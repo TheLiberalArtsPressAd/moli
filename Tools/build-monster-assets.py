@@ -13,6 +13,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import time
 
@@ -31,7 +32,7 @@ STATE_MAP = {
     "10": "die",
 }
 STATE_ORDER = ["idle", "walk", "attack", "special", "hurt", "die"]
-# 這些動作沒有原圖時不要拿待機圖硬補，讓前端自己 fallback
+# 這些動作沒有原圖時，用攻擊／待機動作補齊，確保六種狀態都存在
 OPTIONAL_STATES = {"special", "hurt"}
 
 
@@ -143,7 +144,14 @@ def main():
             src = state_files.get(code)
             if src is None:
                 if state in OPTIONAL_STATES:
-                    continue  # 這隻怪物沒有這個動作，前端會 fallback
+                    # 少數怪物原版沒有施法／受傷動作，用攻擊／待機動作補齊，
+                    # 讓每隻怪物都有六種狀態且不會產生 404。
+                    fallback = "attack.webp" if state == "special" else "idle.webp"
+                    fallback_path = os.path.join(out_dir, fallback)
+                    if os.path.exists(fallback_path):
+                        shutil.copyfile(fallback_path, dst)
+                        states[state] = "web-assets/monsters/%s/%s.webp" % (mid, state)
+                    continue
                 src = state_files.get("00")
             if os.path.exists(dst) and os.path.getsize(dst) > 0:
                 sz = webp_size(dst)

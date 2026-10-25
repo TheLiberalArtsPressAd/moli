@@ -612,7 +612,25 @@ body.admin { overflow: auto; }
 .card.upgrade {
   flex: 1 1 150px;
   text-align: center;
+  position: relative;
 }
+.card.upgrade .tag {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #9fb2cc;
+  background: rgba(0, 0, 0, 0.35);
+}
+.card.upgrade.t-magic { border-color: rgba(159, 216, 255, 0.45); }
+.card.upgrade.t-magic .tag { color: #9fd8ff; border-color: rgba(159, 216, 255, 0.5); }
+.card.upgrade.t-ability { border-color: rgba(255, 209, 102, 0.5); }
+.card.upgrade.t-ability .tag { color: #ffd166; border-color: rgba(255, 209, 102, 0.5); }
+.card.upgrade.t-stat .tag { color: #9fb2cc; }
 .card.upgrade img.ico {
   width: 52px;
   height: 52px;
