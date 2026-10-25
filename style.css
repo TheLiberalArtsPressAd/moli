@@ -177,6 +177,17 @@ button.primary:hover { filter: brightness(1.06); }
 .bar i { display: block; height: 100%; width: 0%; transition: width 0.15s linear; }
 .bar.hp i { background: linear-gradient(90deg, #ff4757, #ff7d68); }
 .bar.mp i { background: linear-gradient(90deg, #6a5cff, #56d0ff); }
+.bar.ult i {
+  background: linear-gradient(90deg, #ffb01f, #ff6b00 55%, #ffe27a);
+  box-shadow: 0 0 10px rgba(255, 165, 0, 0.55);
+}
+.bar.ult.ready { border-color: #ffcf5c; }
+.bar.ult.ready i { animation: ultPulse 0.9s ease-in-out infinite; }
+.bar.ult.ready span { color: #fff6d0; text-shadow: 0 0 8px #ff9b1a, 0 1px 2px #000; }
+@keyframes ultPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.55); }
+}
 .bar.exp i { background: linear-gradient(90deg, #2f9bff, #64e1ff); }
 .bar span {
   position: absolute;
@@ -266,6 +277,45 @@ button.primary:hover { filter: brightness(1.06); }
   padding: 6px 12px;
   font-size: 12px;
 }
+
+/* 音樂控制：主選單音量條與 HUD 靜音鈕 */
+.audioBar {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #c9b98f;
+  font-size: 12px;
+}
+
+.audioToggle { padding: 7px 12px; font-size: 12px; letter-spacing: 0.5px; }
+.audioToggle.muted { color: #8695ab; border-color: #31405a; }
+
+.audioRange { display: inline-flex; align-items: center; gap: 8px; letter-spacing: 1px; }
+.audioRange input[type="range"] {
+  width: 132px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.audioPct {
+  min-width: 38px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.audioBtn {
+  position: absolute;
+  top: 46px;
+  right: 12px;
+  pointer-events: auto;
+  padding: 6px 10px;
+  font-size: 12px;
+  min-width: 44px;
+  letter-spacing: 1px;
+}
+.audioBtn.muted { color: #8695ab; border-color: #31405a; }
 
 /* Admin page */
 body.admin { overflow: auto; }

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>魔力寶貝幸存者 · Web</title>
+<link rel="stylesheet" href="style.css?v=20261025-10" />
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- 主選單（使用專案原本的主視覺、角色立繪與關卡封面） -->
+<div id="menu" class="overlay menuScreen">
+  <div class="menuBg"></div>
+  <img id="menuHero" class="menuHero" src="web-assets/art/hero_sword.png" alt="" />
+  <div class="menuInner">
+    <img class="menuLogo" src="web-assets/art/logo.png" alt="魔力寶貝幸存者" />
+    <p class="menuSub">Crossgate Survivors · 原版美術網頁版</p>
+
+    <div class="audioBar">
+      <button id="audioMute" class="audioToggle" type="button" aria-pressed="false">? 音樂 ON</button>
+      <label class="audioRange">音量
+        <input id="audioVol" type="range" min="0" max="100" step="1" value="60" />
+      </label>
+      <span id="audioPct" class="audioPct">60%</span>
+    </div>
+
+    <div class="section">
+      <h2>選擇角色</h2>
+      <div id="playerList" class="cardRow"></div>
+    </div>
+
+    <div class="section">
+      <h2>選擇關卡</h2>
+      <div id="levelList" class="cardRow levelRow"></div>
+    </div>
+
+    <div class="actions">
+      <button id="startBtn" class="primary" disabled>開始遊戲</button>
+      <a class="btn" href="admin.html">後台編輯數據</a>
+      <a class="btn" href="https://github.com/TheLiberalArtsPressAd/moli" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <p id="loopNote" class="note"></p>
+    <p id="loadNote" class="note"></p>
+  </div>
+</div>
+
+<!-- 遊戲中 HUD -->
+<div id="hud" class="hidden">
+  <div class="topbar">
+    <div class="stat"><span id="levelName">關卡</span></div>
+    <div class="stat">時間 <b id="timer">00:00</b></div>
+    <div class="stat">擊殺 <b id="kills">0</b></div>
+    <div class="stat">波次 <b id="round">-</b></div>
+  </div>
+
+  <div class="bars">
+    <div class="barRow">
+      <span class="barLabel">HP</span>
+      <div class="bar hp"><i id="hpFill"></i><span id="hpText">0/0</span></div>
+    </div>
+    <div class="barRow">
+      <span class="barLabel">MP</span>
+      <div class="bar mp"><i id="mpFill"></i><span id="mpText">0/0</span></div>
+    </div>
+    <div class="barRow">
+      <span class="barLabel">ULT</span>
+      <div class="bar ult" id="ultBar"><i id="ultFill"></i><span id="ultText">0%</span></div>
+    </div>
+    <div class="barRow">
+      <span class="barLabel">EXP</span>
+      <div class="bar exp"><i id="expFill"></i><span id="expText">0/0</span></div>
+    </div>
+    <div id="statusInfo" class="statusInfo"></div>
+  </div>
+
+  <div id="skillBar" class="skillBar"></div>
+  <div id="toast" class="toast"></div>
+
+  <div id="bossBar" class="bossBar hidden">
+    <div class="bossHead">
+      <b id="bossName">BOSS</b>
+      <em id="bossTitle"></em>
+      <span id="bossPhase" class="bossPhase">第一階段</span>
+    </div>
+    <div class="bossTrack"><i id="bossFill"></i><span id="bossHp"></span></div>
+  </div>
+
+  <button id="audioBtn" class="audioBtn" type="button" title="音樂開關（M）">?</button>
+  <button id="quitBtn" class="quit">離開</button>
+</div>
+
+<!-- 關卡與霸主登場字卡 -->
+<div id="stageIntro" class="stageIntro hidden">
+  <div class="siKicker" id="siKicker">STAGE 01</div>
+  <div class="siName" id="siName"></div>
+  <div class="siDesc" id="siDesc"></div>
+  <div class="siBoss" id="siBoss"></div>
+</div>
+
+<div id="bossIntro" class="bossIntro hidden">
+  <div class="biKicker" id="biKicker">BOSS</div>
+  <div class="biName" id="biName"></div>
+  <div class="biTitle" id="biTitle"></div>
+  <div class="biLore" id="biLore"></div>
+</div>
+
+<!-- 升級 / 結束 -->
+<div id="levelUp" class="overlay hidden">
+  <div class="panel">
+    <h2>升級！選擇強化</h2>
+    <div id="upgradeList" class="cardRow"></div>
+  </div>
+</div>
+
+<div id="gameOver" class="overlay hidden">
+  <div class="panel">
+    <h2 id="gameOverTitle">遊戲結束</h2>
+    <p id="gameOverStats" class="sub"></p>
+    <div class="actions">
+      <button id="retryBtn" class="primary">再玩一次</button>
+      <button id="menuBtn" class="btn">回主選單</button>
+    </div>
+  </div>
+</div>
+
+<script src="config/game_config.js?v=20261025-10"></script>
+<script src="web-assets/monsters/sheets.js?v=20261025-10"></script>
+<script src="audio.js?v=20261025-10"></script>
+<script src="art.js?v=20261025-10"></script>
+<script src="game.js?v=20261025-10"></script>
+<script src="_selftest.js?v=3"></script>
+</body>
+</html>

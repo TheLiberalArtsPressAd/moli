@@ -11,6 +11,10 @@
   web-assets/monsters/sheets.json
     { "<id>": { "<state>": { "w": 單格寬, "h": 單格高, "n": 格數,
                               "d": [每格毫秒...] } } }
+  web-assets/monsters/sheets.js
+    window.MONSTER_SHEETS = { ...同上... };
+    （用 <script> 載入，雙擊 index.html 以 file:// 開啟時 fetch 會被瀏覽器
+      阻擋，改成 script 才讀得到格數，怪物動作才不會退化成單張靜止圖）
 
 已存在的 sheet 會跳過，可重複執行補齊。
 """
@@ -26,6 +30,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MON_ROOT = os.path.join(ROOT, "web-assets", "monsters")
 CATALOG = os.path.join(MON_ROOT, "catalog.json")
 SHEETS_META = os.path.join(MON_ROOT, "sheets.json")
+SHEETS_JS = os.path.join(MON_ROOT, "sheets.js")
 STATES = ["idle", "walk", "attack", "special", "hurt", "die"]
 
 
@@ -123,6 +128,14 @@ def main():
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(meta, fh, ensure_ascii=False, separators=(",", ":"))
     os.replace(tmp, SHEETS_META)
+    compact = json.dumps(meta, ensure_ascii=False, separators=(",", ":"))
+    tmp_js = SHEETS_JS + ".tmp"
+    with open(tmp_js, "w", encoding="utf-8") as fh:
+        fh.write("/* 由 Tools/build-monster-sheets.py 產生，請勿手動編輯。 */\n")
+        fh.write("window.MONSTER_SHEETS=")
+        fh.write(compact)
+        fh.write(";\n")
+    os.replace(tmp_js, SHEETS_JS)
     print("done: %d built, %d reused, %.1f MB, %.0fs" % (
         built, skipped, total_bytes / 1048576, time.time() - t0), flush=True)
     return 0

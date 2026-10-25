@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>魔力寶貝幸存者 · Web</title>
-<link rel="stylesheet" href="style.css?v=20261025-4" />
+<link rel="stylesheet" href="style.css?v=20261025-10" />
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -16,6 +16,14 @@
   <div class="menuInner">
     <img class="menuLogo" src="web-assets/art/logo.png" alt="魔力寶貝幸存者" />
     <p class="menuSub">Crossgate Survivors · 原版美術網頁版</p>
+
+    <div class="audioBar">
+      <button id="audioMute" class="audioToggle" type="button" aria-pressed="false">? 音樂 ON</button>
+      <label class="audioRange">音量
+        <input id="audioVol" type="range" min="0" max="100" step="1" value="60" />
+      </label>
+      <span id="audioPct" class="audioPct">60%</span>
+    </div>
 
     <div class="section">
       <h2>選擇角色</h2>
@@ -56,6 +64,10 @@
       <div class="bar mp"><i id="mpFill"></i><span id="mpText">0/0</span></div>
     </div>
     <div class="barRow">
+      <span class="barLabel">ULT</span>
+      <div class="bar ult" id="ultBar"><i id="ultFill"></i><span id="ultText">0%</span></div>
+    </div>
+    <div class="barRow">
       <span class="barLabel">EXP</span>
       <div class="bar exp"><i id="expFill"></i><span id="expText">0/0</span></div>
     </div>
@@ -74,6 +86,7 @@
     <div class="bossTrack"><i id="bossFill"></i><span id="bossHp"></span></div>
   </div>
 
+  <button id="audioBtn" class="audioBtn" type="button" title="音樂開關（M）">?</button>
   <button id="quitBtn" class="quit">離開</button>
 </div>
 
@@ -111,7 +124,10 @@
   </div>
 </div>
 
-<script src="art.js?v=20261025-4"></script>
-<script src="game.js?v=20261025-4"></script>
+<script src="config/game_config.js?v=20261025-10"></script>
+<script src="web-assets/monsters/sheets.js?v=20261025-10"></script>
+<script src="audio.js?v=20261025-10"></script>
+<script src="art.js?v=20261025-10"></script>
+<script src="game.js?v=20261025-10"></script>
 </body>
 </html>

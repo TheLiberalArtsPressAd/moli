@@ -21,12 +21,40 @@
   var IMG = {};
   var loaded = false;
 
+  // 圖片下載佇列：一關可能有 100 種以上的怪物 × 6 段動作，
+  // 若一次全部建立 <img>，瀏覽器連線數會被吃滿，走路／攻擊／死亡圖反而更慢到位。
+  // 這裡限制同時下載數，並讓「待機 → 行走 → 攻擊 → 施法 → 受傷 → 死亡」依序補齊。
+  var IMG_QUEUE = [];
+  var IMG_ACTIVE = 0;
+  var IMG_MAX_ACTIVE = 10;
+
+  function pumpImageQueue() {
+    while (IMG_ACTIVE < IMG_MAX_ACTIVE && IMG_QUEUE.length) {
+      (function (job) {
+        IMG_ACTIVE++;
+        var img = new Image();
+        var settled = false;
+        function done() {
+          if (settled) return;
+          settled = true;
+          IMG_ACTIVE--;
+          try { job.resolve(img); } catch (e) {}
+          pumpImageQueue();
+        }
+        img.onload = done;
+        img.onerror = done;
+        try { img.decoding = "async"; } catch (e) {}
+        img.src = job.src;
+        // 已經在快取裡的圖可能同步完成，保險起見再檢查一次
+        if (img.complete) setTimeout(done, 0);
+      })(IMG_QUEUE.shift());
+    }
+  }
+
   function loadImage(src) {
     return new Promise(function (resolve) {
-      var img = new Image();
-      img.onload = function () { resolve(img); };
-      img.onerror = function () { resolve(null); };
-      img.src = src;
+      IMG_QUEUE.push({ src: src, resolve: resolve });
+      pumpImageQueue();
     });
   }
 
@@ -89,12 +117,17 @@
   // 這裡依時間自己切格，走動／攻擊／施法／受傷／死亡才會真的動起來。
   var MON_DIR = ART_DIR.replace(/web-assets\/art\/$/, "web-assets/monsters/");
   var MON = {};        // id -> { idle, walk, attack, special, hurt, die }
-  var MON_META = null;
+  // sheets.js 會以 <script> 先載入（file:// 也能用）；sheets.json 只作為更新後的後備。
+  var MON_META = (global.MONSTER_SHEETS && typeof global.MONSTER_SHEETS === "object") ? global.MONSTER_SHEETS : null;
   var monMetaPromise = null;
   var ANIM_STATES = ["idle", "walk", "attack", "special", "hurt", "die"];
 
   function loadMonsterMeta() {
     if (monMetaPromise) return monMetaPromise;
+    if (MON_META) {
+      monMetaPromise = Promise.resolve(MON_META);
+      return monMetaPromise;
+    }
     monMetaPromise = fetch(MON_DIR + "sheets.json", { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : {}; })
       .catch(function () { return {}; })
@@ -138,6 +171,16 @@
   function monsterMeta(id, state) {
     var m = MON_META && MON_META[id];
     return (m && m[state]) || null;
+  }
+
+  // 某段動作的總長度（秒）。死亡動畫要播完整才淡出，不能固定 1 秒。
+  function monsterAnimDuration(id, state) {
+    var meta = monsterMeta(id, state);
+    if (!meta) return 0;
+    var durs = meta.d || [];
+    var total = 0;
+    for (var i = 0; i < (meta.n || 0); i++) total += (durs[i] || 120) / 1000;
+    return total;
   }
 
   function loadMonsters(ids, onProgress, states) {
@@ -337,6 +380,124 @@
     underwater: ["rgba(90,200,255,0.07)", "rgba(120,255,220,0.06)", "rgba(180,140,255,0.05)"]
   };
 
+  // 15 張地圖各自的辨識特徵：水池／道路／天候／地標材質都不同，
+  // 讓每一關除了色調之外還有自己的地景記憶點。
+  var LEVEL_SCENERY = [
+    { // 0 芙蕾雅島：碧綠潮池與白色砂路
+      pool: { kind: "water", color: "#45c8c0", shore: "#d8e6c0", count: 3, r: [70, 132] },
+      path: { kind: "sand", color: "rgba(240,232,190,0.5)", width: 46 },
+      weather: { kind: "petal", color: "#fff2c8", color2: "#a8e6cf", count: 34, speed: 1.0, size: 2.2, alpha: 0.55 },
+      landmark: { kind: "shrine", tint: "#e8d9a0", signature: ["coral", "waterfall"] },
+      fog: "rgba(255,240,200,0.05)"
+    },
+    { // 1 索奇亞島：綠洲與商旅古道
+      pool: { kind: "oasis", color: "#2fb8a8", shore: "#e3cc8c", count: 2, r: [90, 160] },
+      path: { kind: "sand", color: "rgba(228,198,132,0.55)", width: 52 },
+      weather: { kind: "sand", color: "#ffe3a8", count: 52, speed: 2.4, size: 7, alpha: 0.3 },
+      landmark: { kind: "ruin", tint: "#e6c98a", signature: ["obelisk", "pillar"] },
+      fog: "rgba(255,214,140,0.07)"
+    },
+    { // 2 莎蓮娜島：發光菇林與盤根小徑
+      pool: { kind: "water", color: "#3fd0a0", shore: "#24483c", count: 3, r: [64, 118] },
+      path: { kind: "root", color: "rgba(96,66,40,0.55)", width: 40 },
+      weather: { kind: "firefly", color: "#a8ffd8", count: 46, speed: 0.5, size: 2.4, alpha: 0.8 },
+      landmark: { kind: "mushroom", tint: "#9fe6b8", signature: ["shrine", "crystalcluster"] },
+      fog: "rgba(40,120,90,0.12)"
+    },
+    { // 3 米內葛爾島：石祠、溪流與落葉
+      pool: { kind: "water", color: "#3fa8d8", shore: "#6f7a52", count: 2, r: [70, 128] },
+      path: { kind: "dirt", color: "rgba(122,96,60,0.5)", width: 40 },
+      weather: { kind: "leaf", color: "#ffb454", color2: "#c8e07a", count: 30, speed: 1.1, size: 3.0, alpha: 0.6 },
+      landmark: { kind: "shrine", tint: "#c9b47a", signature: ["torii", "banner"] },
+      fog: "rgba(255,230,170,0.05)"
+    },
+    { // 4 庫魯克斯島：凍湖、冰晶與落雪
+      pool: { kind: "ice", color: "#bfeaff", shore: "#e9f7ff", count: 3, r: [80, 150] },
+      path: { kind: "ice", color: "rgba(226,246,255,0.55)", width: 46 },
+      weather: { kind: "snow", color: "#ffffff", count: 62, speed: 1.3, size: 2.2, alpha: 0.8 },
+      landmark: { kind: "crystal", tint: "#dff3ff", signature: ["obelisk", "crystalcluster"] },
+      fog: "rgba(200,235,255,0.09)"
+    },
+    { // 5 德威特島：秋色森林與傾頹石牆
+      pool: { kind: "water", color: "#3a8f9c", shore: "#5a4a30", count: 2, r: [66, 120] },
+      path: { kind: "dirt", color: "rgba(132,100,58,0.5)", width: 42 },
+      weather: { kind: "leaf", color: "#e88a3c", color2: "#ffd166", count: 38, speed: 1.4, size: 3.2, alpha: 0.65 },
+      landmark: { kind: "ruin", tint: "#c9b47a", signature: ["torii", "arch"] },
+      fog: "rgba(255,180,110,0.05)"
+    },
+    { // 6 傑諾姆島：地下湖與滴水
+      pool: { kind: "water", color: "#3f7fd8", shore: "#1e2038", count: 3, r: [76, 140] },
+      path: { kind: "stone", color: "rgba(110,104,140,0.45)", width: 38 },
+      weather: { kind: "drip", color: "#9fd8ff", count: 40, speed: 2.8, size: 6, alpha: 0.5 },
+      landmark: { kind: "crystal", tint: "#b49cff", signature: ["bones", "crystalcluster"] },
+      fog: "rgba(30,26,60,0.16)"
+    },
+    { // 7 弗利德島：熔岩池與火山灰
+      pool: { kind: "lava", color: "#ff7420", shore: "#3a2018", count: 4, r: [60, 116] },
+      path: { kind: "ash", color: "rgba(84,64,56,0.55)", width: 48 },
+      weather: { kind: "ember", color: "#ffb15c", count: 54, speed: 1.7, size: 2.4, alpha: 0.9 },
+      landmark: { kind: "lavacrack", tint: "#ff8a4a", signature: ["bones", "lavapool"] },
+      fog: "rgba(120,40,10,0.14)"
+    },
+    { // 8 樂園之卵：星光水池與虹彩
+      pool: { kind: "water", color: "#5fd8ff", shore: "#f0d6ff", count: 3, r: [84, 150] },
+      path: { kind: "crystal", color: "rgba(180,220,255,0.45)", width: 44 },
+      weather: { kind: "star", color: "#ffe9a8", color2: "#a8e6ff", count: 40, speed: 0.8, size: 2.8, alpha: 0.9 },
+      landmark: { kind: "shrine", tint: "#ffd6ff", signature: ["sundial", "arch"] },
+      fog: "rgba(160,220,255,0.07)"
+    },
+    { // 9 辛梅爾：幽泉、墓碑與鬼火
+      pool: { kind: "void", color: "#6f7fd8", shore: "#2a2e44", count: 2, r: [70, 126] },
+      path: { kind: "stone", color: "rgba(120,130,160,0.42)", width: 40 },
+      weather: { kind: "wisp", color: "#a9c8ff", count: 42, speed: 0.55, size: 2.6, alpha: 0.85 },
+      landmark: { kind: "grave", tint: "#b9c6e6", signature: ["bones", "statue"] },
+      fog: "rgba(30,36,60,0.16)"
+    },
+    { // 10 諾斯菲拉特：凍結藍洞與霜霧
+      pool: { kind: "ice", color: "#8fdcff", shore: "#cfeaff", count: 3, r: [86, 156] },
+      path: { kind: "ice", color: "rgba(180,232,255,0.5)", width: 44 },
+      weather: { kind: "snow", color: "#dff3ff", count: 56, speed: 1.1, size: 2.0, alpha: 0.75 },
+      landmark: { kind: "crystal", tint: "#9fd8ff", signature: ["obelisk", "crystalcluster"] },
+      fog: "rgba(120,180,230,0.13)"
+    },
+    { // 11 哈那可半島：海岸潮池與漂流木
+      pool: { kind: "water", color: "#3fc0d0", shore: "#efe2b8", count: 3, r: [78, 142] },
+      path: { kind: "sand", color: "rgba(238,226,190,0.55)", width: 50 },
+      weather: { kind: "wind", color: "#e8fbff", count: 44, speed: 3.4, size: 10, alpha: 0.35 },
+      landmark: { kind: "ruin", tint: "#c9d8b0", signature: ["shipwreck", "banner"] },
+      fog: "rgba(160,220,240,0.07)"
+    },
+    { // 12 逆星：虛空裂隙與隕星
+      pool: { kind: "void", color: "#b25fd8", shore: "#241a36", count: 3, r: [70, 132] },
+      path: { kind: "stone", color: "rgba(70,52,92,0.55)", width: 42 },
+      weather: { kind: "star", color: "#ff9bd2", color2: "#b49cff", count: 48, speed: 1.6, size: 2.6, alpha: 0.9 },
+      landmark: { kind: "crystal", tint: "#ff9bd2", signature: ["obelisk", "pillar"] },
+      fog: "rgba(60,20,80,0.15)"
+    },
+    { // 13 日耀之域：灼熱沙丘與蜃景水灘
+      pool: { kind: "oasis", color: "#7fd8c8", shore: "#e9cf94", count: 2, r: [70, 130] },
+      path: { kind: "sand", color: "rgba(255,226,150,0.55)", width: 54 },
+      weather: { kind: "mote", color: "#ffe08a", count: 46, speed: 0.9, size: 2.2, alpha: 0.7 },
+      landmark: { kind: "ruin", tint: "#ffd79a", signature: ["sundial", "statue"] },
+      fog: "rgba(255,190,90,0.1)"
+    },
+    { // 14 水曜之域：珊瑚礁、沉沒石道與氣泡
+      pool: { kind: "water", color: "#2f8fd8", shore: "#1c4a68", count: 4, r: [80, 148] },
+      path: { kind: "stone", color: "rgba(80,140,160,0.45)", width: 44 },
+      weather: { kind: "bubble", color: "#c8f4ff", count: 52, speed: 1.2, size: 3.2, alpha: 0.6 },
+      landmark: { kind: "coral", tint: "#8fe6ff", signature: ["shipwreck", "waterfall"] },
+      fog: "rgba(10,50,90,0.2)"
+    }
+  ];
+
+  function levelIndex(level) {
+    var m = /^(\d+)/.exec(String((level && level.Region) || ""));
+    if (m) return clampNum(parseInt(m[1], 10) - 1, 0, LEVEL_SCENERY.length - 1);
+    var d = level && level.Difficulty;
+    if (typeof d === "number") return clampNum(Math.round(d) - 1, 0, LEVEL_SCENERY.length - 1);
+    return 0;
+  }
+
   function biomeFor(level) {
     var key = (level.Terrain || "").toLowerCase();
     if (BIOMES[key]) return BIOMES[key];
@@ -429,6 +590,8 @@
     }
     if (!BIOMES[biomeKey]) biomeKey = "forest";
     var biome = BIOMES[biomeKey];
+    var lvIdx = levelIndex(level);
+    var scenery = LEVEL_SCENERY[lvIdx] || LEVEL_SCENERY[0];
 
     var w = IMG.map ? IMG.map.width : Math.max(20, level.MapWidth || 50) * 42;
     var h = IMG.map ? IMG.map.height : Math.max(20, level.MapHeight || 50) * 42;
@@ -460,21 +623,35 @@
 
     // 地標：沿著出生點外圈擺放，讓每個地區有自己的地景記憶點
     var ldef = LANDMARKS[biomeKey] || LANDMARKS.forest;
+    if (scenery.landmark) {
+      ldef = { kind: scenery.landmark.kind, count: ldef.count, tint: scenery.landmark.tint };
+    }
+    // 每關混搭主地標 + 專屬地標，避免 15 關看起來都一樣
+    var lkinds = [ldef.kind];
+    if (scenery.landmark && scenery.landmark.signature) {
+      var sig = scenery.landmark.signature;
+      if (Object.prototype.toString.call(sig) === "[object Array]") {
+        sig.forEach(function (k) { if (lkinds.indexOf(k) < 0) lkinds.push(k); });
+      } else if (lkinds.indexOf(sig) < 0) {
+        lkinds.push(sig);
+      }
+    }
     var landmarks = [];
     var arenaR = Math.min(w, h) * 0.16;
-    for (var li = 0; li < ldef.count; li++) {
+    var lcount = ldef.count + 1;
+    for (var li = 0; li < lcount; li++) {
       var lr = r();
-      var ang = (li / ldef.count) * Math.PI * 2 + lr * 0.5;
+      var ang = (li / lcount) * Math.PI * 2 + lr * 0.5;
       var radius = arenaR + 180 + r() * Math.max(80, Math.min(w, h) * 0.26);
       var lx = cx + Math.cos(ang) * radius;
       var ly = cy + Math.sin(ang) * radius * 0.82;
       if (lx < 90 || lx > w - 90 || ly < 110 || ly > h - 90) continue;
       landmarks.push({
         type: "landmark",
-        kind: ldef.kind,
+        kind: lkinds[li % lkinds.length],
         tint: ldef.tint,
         x: lx, y: ly,
-        scale: 0.8 + r() * 0.55,
+        scale: li === 0 ? 1.4 + r() * 0.3 : 0.8 + r() * 0.55,
         flip: r() > 0.5
       });
     }
@@ -483,7 +660,7 @@
     var decals = [];
     var decalKinds = THEME_DECALS[biomeKey] || THEME_DECALS.forest;
     var decalColors = DECAL_COLORS[biomeKey] || DECAL_COLORS.forest;
-    var decalCount = clampNum(Math.round(w * h / 7800), 150, 320);
+    var decalCount = clampNum(Math.round(w * h / 7000), 190, 400);
     for (var di = 0; di < decalCount; di++) {
       var dkind = decalKinds[Math.floor(r() * decalKinds.length)];
       decals.push({
@@ -500,7 +677,7 @@
     // 主題小物：岩石、灌木、仙人掌、冰柱、白骨、貝殼、火把、雕像…
     var extraProps = [];
     var decoKinds = THEME_PROPS[biomeKey] || THEME_PROPS.forest;
-    var decoCount = clampNum(Math.round(w * h / 26000), 10, 28);
+    var decoCount = clampNum(Math.round(w * h / 22000), 14, 36);
     var dguard = 0;
     while (extraProps.length < decoCount && dguard < decoCount * 40) {
       dguard++;
@@ -523,7 +700,7 @@
     // 前景層：高草、蘆葦、蕨葉、鐘乳石等，畫在角色之上製造景深
     var fg = [];
     var fgKinds = THEME_FG[biomeKey] || THEME_FG.forest;
-    var fgCount = clampNum(Math.round(w * h / 16000), 40, 110);
+    var fgCount = clampNum(Math.round(w * h / 14500), 50, 130);
     for (var fi2 = 0; fi2 < fgCount; fi2++) {
       fg.push({
         kind: fgKinds[Math.floor(r() * fgKinds.length)],
@@ -538,6 +715,65 @@
     var tintOpts = LEVEL_TINT[biomeKey] || LEVEL_TINT.forest;
     var tint = tintOpts[hashStr(level.Name || "level") % tintOpts.length];
 
+    // 每關專屬水池：水／綠洲／冰湖／熔岩／虛空
+    var pools = [];
+    if (scenery.pool) {
+      var pdef = scenery.pool;
+      for (var pi = 0; pi < pdef.count; pi++) {
+        var pang = (pi / Math.max(1, pdef.count)) * Math.PI * 2 + r() * 1.2;
+        var prad = arenaR + 170 + r() * Math.min(w, h) * 0.28;
+        var pxp = cx + Math.cos(pang) * prad;
+        var pyp = cy + Math.sin(pang) * prad * 0.78;
+        var pr = pdef.r[0] + r() * (pdef.r[1] - pdef.r[0]);
+        if (pxp - pr < 40 || pxp + pr > w - 40 || pyp - pr < 70 || pyp + pr > h - 40) continue;
+        pools.push({
+          x: pxp, y: pyp, r: pr,
+          squash: 0.52 + r() * 0.16,
+          kind: pdef.kind,
+          color: pdef.color,
+          shore: pdef.shore,
+          phase: r() * Math.PI * 2
+        });
+      }
+    }
+
+    // 貫穿地圖的小徑：砂路、泥路、盤根、石板、冰道
+    var pathPts = null;
+    if (scenery.path) {
+      var pdef2 = scenery.path;
+      var segs = 7;
+      var pphase = r() * Math.PI * 2;
+      var pamp = Math.min(w, h) * (0.11 + r() * 0.09);
+      pathPts = [];
+      for (var pgi = 0; pgi <= segs; pgi++) {
+        pathPts.push({
+          x: -50 + (w + 100) * pgi / segs,
+          y: clampNum(cy + Math.sin(pgi * 1.15 + pphase) * pamp, 50, h - 50)
+        });
+      }
+      pathPts.def = pdef2;
+    }
+
+    // 天候粒子（螢火、落葉、飛雪、熔岩灰、星塵、氣泡…）
+    var weather = null;
+    if (scenery.weather) {
+      var wdef = scenery.weather;
+      var dots = [];
+      for (var wi2 = 0; wi2 < wdef.count; wi2++) {
+        dots.push({
+          x: r(), y: r(),
+          ph: r() * Math.PI * 2,
+          sp: 0.6 + r() * 0.85,
+          sz: 0.55 + r() * 0.9,
+          sw: r() * 2 - 1
+        });
+      }
+      weather = {
+        kind: wdef.kind, color: wdef.color, color2: wdef.color2,
+        speed: wdef.speed, size: wdef.size, alpha: wdef.alpha, dots: dots
+      };
+    }
+
     var props = trees.concat(landmarks).concat(extraProps);
     props.sort(function (a, b) { return a.y - b.y; });
 
@@ -550,6 +786,10 @@
       decals: decals,
       fg: fg,
       tint: tint,
+      pools: pools,
+      path: pathPts,
+      weather: weather,
+      scenery: scenery,
       arena: { x: cx, y: cy, r: arenaR, color: level.ArenaColor || "#ffcf7a" },
       seed: hashStr((level.Name || "") + ":" + biomeKey)
     };
@@ -593,6 +833,10 @@
       ctx.restore();
     }
 
+    // 小徑與水池（畫在貼花之前，讓草石自然疊在上面）
+    if (scene.path) drawPath(ctx, scene, ox, oy, time);
+    if (scene.pools && scene.pools.length) drawPools(ctx, scene, ox, oy, vw, vh, time);
+
     // 地面貼花
     if (scene.decals) {
       for (var i = 0; i < scene.decals.length; i++) {
@@ -601,6 +845,152 @@
         if (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40) continue;
         drawDecal(ctx, d, sx, sy, time);
       }
+    }
+  }
+
+  function pathStroke(ctx, pts, ox, oy) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x + ox, pts[0].y + oy);
+    for (var i = 1; i < pts.length - 1; i++) {
+      var mx = (pts[i].x + pts[i + 1].x) * 0.5 + ox;
+      var my = (pts[i].y + pts[i + 1].y) * 0.5 + oy;
+      ctx.quadraticCurveTo(pts[i].x + ox, pts[i].y + oy, mx, my);
+    }
+    var last = pts[pts.length - 1];
+    ctx.lineTo(last.x + ox, last.y + oy);
+    ctx.stroke();
+  }
+
+  // 貫穿地圖的小徑：砂路、泥路、盤根、石板、冰道
+  function drawPath(ctx, scene, ox, oy, time) {
+    var pts = scene.path;
+    if (!pts || pts.length < 2) return;
+    var def = pts.def || {};
+    var wd = def.width || 42;
+    ctx.save();
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = wd + 12;
+    pathStroke(ctx, pts, ox, oy);
+    ctx.strokeStyle = def.color || "rgba(160,140,100,0.45)";
+    ctx.lineWidth = wd;
+    pathStroke(ctx, pts, ox, oy);
+    ctx.globalAlpha = 0.5;
+    if (def.kind === "root") {
+      ctx.strokeStyle = "#3f2c1c";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([14, 12]);
+      ctx.lineDashOffset = -time * 6;
+      pathStroke(ctx, pts, ox, oy);
+      ctx.setLineDash([]);
+    } else if (def.kind === "stone") {
+      ctx.strokeStyle = "rgba(210,220,240,0.5)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 14]);
+      pathStroke(ctx, pts, ox, oy);
+      ctx.setLineDash([]);
+    } else if (def.kind === "ice") {
+      ctx.strokeStyle = "rgba(255,255,255,0.6)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([22, 18]);
+      ctx.lineDashOffset = time * 4;
+      pathStroke(ctx, pts, ox, oy);
+      ctx.setLineDash([]);
+    } else {
+      ctx.strokeStyle = "rgba(255,255,255,0.28)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 20]);
+      ctx.lineDashOffset = -time * 3;
+      pathStroke(ctx, pts, ox, oy);
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  // 每關的水池／熔岩池／冰湖／虛空池
+  function drawPools(ctx, scene, ox, oy, vw, vh, time) {
+    if (!scene.pools) return;
+    for (var i = 0; i < scene.pools.length; i++) {
+      var p = scene.pools[i];
+      var sx = p.x + ox, sy = p.y + oy;
+      if (sx + p.r < -60 || sx - p.r > vw + 60 || sy + p.r < -60 || sy - p.r > vh + 60) continue;
+      var kind = p.kind;
+      var pulse = 0.5 + 0.5 * Math.sin(time * 1.4 + p.phase);
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.scale(1, p.squash || 0.6);
+
+      // 岸邊
+      ctx.globalAlpha = kind === "lava" ? 0.9 : 0.5;
+      ctx.fillStyle = p.shore || "#3a4a3a";
+      ctx.beginPath(); ctx.arc(0, 0, p.r + 10, 0, Math.PI * 2); ctx.fill();
+
+      // 主體
+      var g = ctx.createRadialGradient(-p.r * 0.22, -p.r * 0.28, p.r * 0.08, 0, 0, p.r);
+      if (kind === "lava") {
+        g.addColorStop(0, "rgba(255,236,150,0.98)");
+        g.addColorStop(0.45, p.color);
+        g.addColorStop(1, "rgba(120,24,8,0.95)");
+      } else if (kind === "ice") {
+        g.addColorStop(0, "rgba(255,255,255,0.95)");
+        g.addColorStop(0.55, p.color);
+        g.addColorStop(1, "rgba(120,180,220,0.9)");
+      } else if (kind === "void") {
+        g.addColorStop(0, "rgba(240,210,255,0.9)");
+        g.addColorStop(0.5, p.color);
+        g.addColorStop(1, "rgba(24,10,40,0.95)");
+      } else if (kind === "oasis") {
+        g.addColorStop(0, "rgba(160,255,230,0.95)");
+        g.addColorStop(0.6, p.color);
+        g.addColorStop(1, "rgba(16,90,86,0.92)");
+      } else {
+        g.addColorStop(0, "rgba(180,250,255,0.92)");
+        g.addColorStop(0.6, p.color);
+        g.addColorStop(1, "rgba(16,60,90,0.92)");
+      }
+      ctx.globalAlpha = 0.92;
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fill();
+
+      // 水面波紋／熔岩流動
+      ctx.globalAlpha = kind === "lava" ? 0.5 + pulse * 0.3 : 0.2;
+      ctx.strokeStyle = kind === "lava" ? "#ffd166" : "#eaffff";
+      ctx.lineWidth = 2;
+      for (var k = 0; k < 3; k++) {
+        var rr = p.r * (0.34 + k * 0.21) + Math.sin(time * 0.9 + p.phase + k) * 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, rr, p.phase + k, p.phase + k + Math.PI * 1.25);
+        ctx.stroke();
+      }
+
+      if (kind === "ice") {
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(-p.r * 0.5, -p.r * 0.1); ctx.lineTo(-p.r * 0.1, p.r * 0.2); ctx.lineTo(p.r * 0.35, -p.r * 0.15);
+        ctx.stroke();
+      } else if (kind === "void") {
+        ctx.globalAlpha = 0.55;
+        ctx.strokeStyle = "#ffd6ff";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([12, 14]);
+        ctx.lineDashOffset = -time * 12;
+        ctx.beginPath(); ctx.arc(0, 0, p.r * 0.8, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (kind === "lava") {
+        ctx.globalAlpha = 0.4 + pulse * 0.5;
+        ctx.fillStyle = "#ffe9a8";
+        for (var b = 0; b < 4; b++) {
+          var ba = p.phase + b * 1.7;
+          var br = p.r * (0.25 + 0.16 * (b % 2));
+          ctx.beginPath();
+          ctx.arc(Math.cos(ba) * br, Math.sin(ba) * br, 2.6 + pulse * 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
     }
   }
 
@@ -1049,6 +1439,303 @@
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.beginPath(); ctx.arc(-7, -31, 2.4, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(6, -34, 1.8, 0, Math.PI * 2); ctx.fill();
+    } else if (prop.kind === "torii") {
+      // 鳥居：硃紅社門，樑上垂著注連繩
+      ctx.fillStyle = "#a8322a";
+      ctx.fillRect(-18, -44, 6, 46);
+      ctx.fillRect(12, -44, 6, 46);
+      ctx.fillStyle = "#c94a38";
+      ctx.fillRect(-25, -52, 50, 6);
+      ctx.fillRect(-28, -62, 56, 5);
+      ctx.fillStyle = "#8f2a24";
+      ctx.fillRect(-22, -46, 44, 4);
+      ctx.strokeStyle = tint;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-17, -56);
+      ctx.quadraticCurveTo(0, -48, 17, -56);
+      ctx.stroke();
+      ctx.fillStyle = tint;
+      for (var tp = -12; tp <= 12; tp += 8) {
+        ctx.beginPath();
+        ctx.moveTo(tp, -55); ctx.lineTo(tp + 2, -49); ctx.lineTo(tp + 4, -55);
+        ctx.fill();
+      }
+    } else if (prop.kind === "obelisk") {
+      // 方尖碑：風化的高聳石碑，符文微微發光
+      ctx.fillStyle = "#5f6272";
+      ctx.fillRect(-16, -8, 32, 10);
+      ctx.fillStyle = "#7d8296";
+      ctx.beginPath();
+      ctx.moveTo(-9, 0); ctx.lineTo(-6, -62); ctx.lineTo(0, -74);
+      ctx.lineTo(6, -62); ctx.lineTo(9, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.16)";
+      ctx.beginPath();
+      ctx.moveTo(-6, 0); ctx.lineTo(-4, -62); ctx.lineTo(0, -74);
+      ctx.lineTo(0, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.save();
+      ctx.shadowColor = tint; ctx.shadowBlur = 12 * glow;
+      ctx.fillStyle = tint;
+      for (var oi = 0; oi < 4; oi++) {
+        ctx.globalAlpha = 0.45 + 0.4 * Math.sin(t * 2 + oi * 1.7);
+        ctx.fillRect(-2.5, -16 - oi * 12, 5, 6);
+      }
+      ctx.restore();
+    } else if (prop.kind === "bones") {
+      // 巨獸遺骸：肋骨拱成半圓，頭骨半埋在土裡
+      ctx.strokeStyle = "#ddd8c4";
+      ctx.lineWidth = 4;
+      ctx.lineCap = "round";
+      for (var bi = 0; bi < 5; bi++) {
+        var bx = -24 + bi * 12;
+        var bh = 26 + Math.sin(bi * 0.9) * 10;
+        ctx.beginPath();
+        ctx.moveTo(bx, 0);
+        ctx.quadraticCurveTo(bx + 3, -bh * 0.7, bx + 6, -bh);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#e8e3cf";
+      ctx.beginPath();
+      ctx.ellipse(20, -14, 13, 11, -0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#4a4a42";
+      ctx.beginPath(); ctx.arc(25, -17, 3.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(16, -18, 2.6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#cfc9b4";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(12, -8); ctx.lineTo(-2, -4); ctx.stroke();
+    } else if (prop.kind === "shipwreck") {
+      // 沉船：斷裂船身與破帆，擱淺在岸邊
+      ctx.fillStyle = "#5a4230";
+      ctx.beginPath();
+      ctx.moveTo(-34, -6);
+      ctx.quadraticCurveTo(-20, 8, 30, 2);
+      ctx.lineTo(22, -16);
+      ctx.quadraticCurveTo(-8, -24, -34, -6);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = "#8a6a48";
+      ctx.lineWidth = 3;
+      for (var si = -24; si <= 18; si += 10) {
+        ctx.beginPath(); ctx.moveTo(si, -14); ctx.lineTo(si + 2, 0); ctx.stroke();
+      }
+      ctx.strokeStyle = "#6b5236";
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(-6, -12); ctx.lineTo(-2, -58); ctx.stroke();
+      ctx.fillStyle = "rgba(232,226,200,0.75)";
+      ctx.beginPath();
+      ctx.moveTo(0, -56);
+      ctx.quadraticCurveTo(22, -44, 12, -26);
+      ctx.quadraticCurveTo(4, -32, -2, -28);
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 0.5 + 0.25 * glow;
+      ctx.fillStyle = tint;
+      ctx.beginPath(); ctx.arc(-26, 0, 3, 0, Math.PI * 2); ctx.fill();
+    } else if (prop.kind === "sundial") {
+      // 日晷：祭壇上的銅盤與指時針，光點隨時間移動
+      ctx.fillStyle = "#7a6b52";
+      ctx.fillRect(-16, -12, 32, 14);
+      ctx.fillStyle = "#9b8a6a";
+      ctx.fillRect(-11, -18, 22, 8);
+      ctx.save();
+      ctx.shadowColor = tint; ctx.shadowBlur = 14 * glow;
+      ctx.fillStyle = "#c8b884";
+      ctx.beginPath(); ctx.ellipse(0, -22, 21, 9, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = "#6d5c40";
+      ctx.lineWidth = 1.4;
+      for (var da = 0; da < 12; da++) {
+        var dr = da / 12 * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(dr) * 13, -22 + Math.sin(dr) * 5.4);
+        ctx.lineTo(Math.cos(dr) * 18, -22 + Math.sin(dr) * 7.4);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = "#4a3f2c";
+      ctx.lineWidth = 2.4;
+      var shAng = -Math.PI / 2 + Math.sin(t * 0.25) * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(0, -22);
+      ctx.lineTo(Math.cos(shAng) * 15, -22 + Math.sin(shAng) * 6.5);
+      ctx.stroke();
+      ctx.fillStyle = tint;
+      ctx.beginPath(); ctx.arc(0, -22, 2.6, 0, Math.PI * 2); ctx.fill();
+    } else if (prop.kind === "waterfall") {
+      // 瀑布：岩壁、傾瀉的水幕與底部水霧
+      ctx.fillStyle = "#656b62";
+      ctx.beginPath();
+      ctx.moveTo(-30, 0); ctx.lineTo(-24, -58); ctx.lineTo(-6, -70);
+      ctx.lineTo(12, -64); ctx.lineTo(28, -46); ctx.lineTo(32, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "rgba(120,150,132,0.55)";
+      ctx.fillRect(-20, -56, 40, 56);
+      ctx.save();
+      ctx.shadowColor = "#bff4ff"; ctx.shadowBlur = 14 * glow;
+      var wf = 0.72 + 0.28 * Math.sin(t * 5.5 + sx * 0.01);
+      ctx.globalAlpha = 0.85;
+      var wg = ctx.createLinearGradient(0, -54, 0, 0);
+      wg.addColorStop(0, "rgba(210,248,255,0.9)");
+      wg.addColorStop(1, "rgba(110,200,240,0.55)");
+      ctx.fillStyle = wg;
+      ctx.beginPath();
+      ctx.moveTo(-13, -56); ctx.lineTo(13, -56);
+      ctx.lineTo(20 + wf * 4, 0); ctx.lineTo(-20 - wf * 4, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 0.55;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.4;
+      for (var wl = -2; wl <= 2; wl++) {
+        ctx.beginPath();
+        ctx.moveTo(wl * 5, -54);
+        ctx.lineTo(wl * 7 + Math.sin(t * 6 + wl) * 2, 0);
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.fillStyle = "rgba(230,250,255,0.35)";
+      for (var wi = 0; wi < 4; wi++) {
+        var wr = 10 + ((t * 9 + wi * 13) % 24);
+        ctx.beginPath();
+        ctx.arc(-16 + wi * 11, -2 - ((t * 7 + wi * 9) % 12), wr * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (prop.kind === "arch") {
+      // 石拱門：風化的雙柱與拱頂，殘存符文會呼吸
+      ctx.fillStyle = "#7b7059";
+      ctx.fillRect(-27, -48, 11, 50);
+      ctx.fillRect(16, -48, 11, 50);
+      ctx.fillStyle = "#93876c";
+      ctx.beginPath();
+      ctx.moveTo(-27, -48);
+      ctx.quadraticCurveTo(0, -80, 27, -48);
+      ctx.lineTo(27, -38);
+      ctx.quadraticCurveTo(0, -66, -27, -38);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#5f5745";
+      ctx.fillRect(-32, -4, 64, 6);
+      ctx.save();
+      ctx.shadowColor = tint; ctx.shadowBlur = 12 * glow;
+      ctx.fillStyle = tint;
+      for (var ai2 = -1; ai2 <= 1; ai2++) {
+        ctx.globalAlpha = 0.35 + 0.4 * Math.sin(t * 2.2 + ai2 * 1.4);
+        ctx.fillRect(ai2 * 8 - 1.5, -60 + Math.abs(ai2) * 4, 3, 8);
+      }
+      ctx.restore();
+    } else if (prop.kind === "pillar") {
+      // 斷柱：傾倒的石柱群，切面與裂縫清楚可見
+      var pillars = [[-22, 32, 0.05], [-2, 48, -0.04], [20, 22, 0.09]];
+      for (var pl = 0; pl < pillars.length; pl++) {
+        ctx.save();
+        ctx.translate(pillars[pl][0], 0);
+        ctx.rotate(pillars[pl][2]);
+        ctx.fillStyle = pl === 1 ? "#9a8f74" : "#847a63";
+        ctx.fillRect(-7, -pillars[pl][1], 14, pillars[pl][1]);
+        ctx.fillStyle = "#6b6250";
+        ctx.fillRect(-9, -pillars[pl][1] - 4, 18, 5);
+        ctx.fillStyle = "rgba(255,255,255,0.18)";
+        ctx.fillRect(-7, -pillars[pl][1], 3, pillars[pl][1]);
+        ctx.strokeStyle = "rgba(60,52,40,0.55)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(-4, -pillars[pl][1] * 0.7); ctx.lineTo(2, -pillars[pl][1] * 0.45);
+        ctx.stroke();
+        ctx.restore();
+      }
+    } else if (prop.kind === "statue") {
+      // 守護石像：披著斗篷的遠古守衛，雙眼仍亮著
+      ctx.fillStyle = "#6c6f7c";
+      ctx.fillRect(-20, -10, 40, 12);
+      ctx.fillStyle = "#84889a";
+      ctx.beginPath();
+      ctx.moveTo(-16, -8);
+      ctx.quadraticCurveTo(-12, -54, 0, -62);
+      ctx.quadraticCurveTo(12, -54, 16, -8);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#9aa0b2";
+      ctx.beginPath(); ctx.arc(0, -64, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#6a6f80";
+      ctx.beginPath();
+      ctx.moveTo(-9, -64); ctx.quadraticCurveTo(0, -78, 9, -64);
+      ctx.lineTo(6, -72); ctx.lineTo(0, -80); ctx.lineTo(-6, -72);
+      ctx.closePath(); ctx.fill();
+      ctx.save();
+      ctx.shadowColor = tint; ctx.shadowBlur = 14 * glow;
+      ctx.fillStyle = tint;
+      ctx.beginPath(); ctx.arc(-3.4, -65, 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(3.4, -65, 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = "#5a5e6c";
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(-13, -32); ctx.lineTo(-24, -12); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(13, -32); ctx.lineTo(24, -12); ctx.stroke();
+    } else if (prop.kind === "banner") {
+      // 戰旗：破損的長幡在風中擺動
+      ctx.fillStyle = "#5c4b36";
+      ctx.fillRect(-3, -72, 6, 74);
+      ctx.fillStyle = "#8a7148";
+      ctx.beginPath(); ctx.arc(0, -76, 5, 0, Math.PI * 2); ctx.fill();
+      var sway = Math.sin(t * 2.4 + sx * 0.01) * 4;
+      ctx.save();
+      ctx.shadowColor = tint; ctx.shadowBlur = 10 * glow;
+      ctx.fillStyle = tint;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(2, -70);
+      ctx.quadraticCurveTo(24 + sway, -62, 20 + sway, -40);
+      ctx.lineTo(12 + sway * 0.6, -46);
+      ctx.lineTo(14 + sway * 0.7, -26);
+      ctx.lineTo(2, -34);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = "rgba(255,255,255,0.5)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(6, -64); ctx.lineTo(16 + sway, -48); ctx.stroke();
+    } else if (prop.kind === "crystalcluster") {
+      // 巨大晶簇：多層次的菱形晶體，中心最亮
+      for (var cc = 0; cc < 5; cc++) {
+        var cox = [-18, -7, 6, 17, 0][cc];
+        var chh = [30, 46, 38, 26, 58][cc];
+        ctx.save();
+        ctx.shadowColor = tint; ctx.shadowBlur = (10 + cc * 2) * glow;
+        ctx.fillStyle = cc === 4 ? "rgba(230,250,255,0.95)" : "rgba(170,220,245,0.8)";
+        ctx.beginPath();
+        ctx.moveTo(cox, 0);
+        ctx.lineTo(cox - 7, -chh * 0.5);
+        ctx.lineTo(cox, -chh);
+        ctx.lineTo(cox + 7, -chh * 0.5);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.35)";
+        ctx.beginPath();
+        ctx.moveTo(cox, 0); ctx.lineTo(cox - 7, -chh * 0.5); ctx.lineTo(cox, -chh);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+    } else if (prop.kind === "lavapool") {
+      // 岩漿池：翻滾的熔岩與不時冒出的氣泡
+      ctx.save();
+      ctx.shadowColor = "#ff6a20"; ctx.shadowBlur = 22 * glow;
+      ctx.fillStyle = "#ff6a20";
+      ctx.beginPath();
+      ctx.ellipse(0, -4, 34, 13, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffb15c";
+      ctx.beginPath();
+      ctx.ellipse(Math.sin(t * 0.8) * 6, -5, 22, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,240,180,0.9)";
+      for (var lb = 0; lb < 4; lb++) {
+        var lt = (t * 0.55 + lb * 0.25) % 1;
+        ctx.globalAlpha = 1 - lt;
+        ctx.beginPath();
+        ctx.arc(-14 + lb * 10, -6 - lt * 9, 2 + lt * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      ctx.strokeStyle = "#4a2a1e";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(0, -4, 35, 13.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -1440,8 +2127,21 @@
   }
 
   // 依關卡狀態與時間挑選 sprite sheet 的格子。
-  // 攻擊／施法／受傷用「剩餘動作時間」推算，動作才會跟傷害判定對齊；
-  // 待機／行走／死亡則用自己的動畫時鐘循環或播放一次。
+  //
+  // 這裡刻意「不」依賴 stateT 來算格數：stateT 會被 AI／狀態機在中途改寫，
+  // 一旦它歸零或反向增加，舊寫法就會把整個動作鎖在同一格，看起來像怪物不會動。
+  // 現在每一隻怪都有自己的動畫時鐘（e._animClock），由真實時間推進，
+  // 並且每個狀態都有一個明確的播放長度（dur）；只要狀態改變或重新觸發，
+  // 就從第一格重新播放，走／待機／死亡各自循環或停在最後一格。
+  var ANIM_DEF = {
+    walk:   { loop: true },
+    idle:   { loop: true },
+    die:    { loop: false, hold: true },
+    attack: { loop: false, hold: true },
+    special:{ loop: false, hold: true },
+    hurt:   { loop: false, hold: false }
+  };
+
   function sheetFrameIndex(e, state, meta, time) {
     var n = meta.n || 1;
     if (n <= 1) return 0;
@@ -1450,54 +2150,57 @@
     for (var i = 0; i < n; i++) total += (durs[i] || 120) / 1000;
     if (total <= 0) total = n * 0.12;
 
-    // 換狀態（或同狀態重新觸發）時從第一格開始
-    var restarted = state !== e._animState ||
-      ((state === "attack" || state === "hurt" || state === "special") &&
-        (e.stateT || 0) > (e._animMax || 0) + 0.03);
+    // 同一個狀態被重新觸發（又攻擊一次／又受傷一次／又施法一次）時也要重播，
+    // 判斷方式是「剩餘時間突然變長」——這比看狀態名稱更可靠。
+    var restarted = state !== e._animState;
+    if (!restarted && (state === "attack" || state === "hurt" || state === "special")) {
+      if ((e.stateT || 0) > (e._animLastStateT || 0) + 0.02) restarted = true;
+    }
     if (restarted) {
       e._animState = state;
-      e._animT = 0;
-      e._animMax = Math.max(0.12, e.stateT || (state === "attack" ? 0.45 : 0.3));
+      e._animClock = 0;
     }
-    var prev = e._animLastT;
-    e._animLastT = time;
-    var dt = prev === undefined ? 0 : Math.max(0, Math.min(0.12, time - prev));
+    e._animLastStateT = e.stateT || 0;
 
-    var progress = -1;
-    if (state === "attack" || state === "hurt") {
-      progress = 1 - clampNum((e.stateT || 0) / (e._animMax || 0.45), 0, 1);
-    } else if (state === "special" && e.casting && e.casting.max > 0) {
-      progress = 1 - clampNum(e.casting.t / e.casting.max, 0, 1);
-    } else if (state === "special" && (e.stateT || 0) > 0) {
-      progress = 1 - clampNum((e.stateT || 0) / (e._animMax || 0.35), 0, 1);
-    }
+    // 真實經過時間（切分頁回來時最多補 0.12 秒，避免一次跳很多格）
+    var prev = e._animTime;
+    e._animTime = time;
+    var dt = prev === undefined ? 0.016 : clampNum(time - prev, 0, 0.12);
 
-    if (progress >= 0) {
-      return clampNum(Math.floor(progress * n), 0, n - 1);
-    }
-
-    // 其餘狀態用動畫時鐘
-    var rate = 1;
+    var def = ANIM_DEF[state] || { loop: false };
+    // 各狀態的播放長度（秒）
+    var dur = total;
     if (state === "walk") {
-      rate = 0.95 + clampNum((e.spd || 100) / 260, 0, 1) * 0.75 + (e.animSpeed || 0) * 0.1;
-      if (e.slowT > 0) rate *= 0.6;
-    } else if (state === "die") {
-      rate = 1.05;
+      var wk = 1 / Math.max(0.45, 0.95 + clampNum((e.spd || 100) / 260, 0, 1) * 0.55 +
+        (e.animSpeed || 0) * 0.08);
+      if (e.slowT > 0) wk *= 1.45;
+      dur = total * wk;
     } else if (state === "idle") {
-      rate = 0.85 + (e.animSpeed || 0) * 0.12;
+      dur = total / Math.max(0.6, 0.9 + (e.animSpeed || 0) * 0.1);
+    } else if (state === "attack") {
+      // 攻擊動作要在「起手 → 命中」的時間內播完，命中幀才會對上傷害
+      dur = clampNum(e._animDur || total, 0.34, 1.25);
+    } else if (state === "hurt") {
+      dur = clampNum(total * 0.5, 0.22, 0.42);
+    } else if (state === "special") {
+      dur = clampNum((e.casting && e.casting.max) ? e.casting.max : (e._animDur || total), 0.3, 1.8);
+    } else if (state === "die") {
+      dur = Math.max(0.45, total);
     }
-    e._animT += dt * rate;
 
-    var t = e._animT;
-    var loop = state === "idle" || state === "walk";
-    if (loop) {
-      t = t % total;
-    } else if (t >= total) {
-      t = total - 0.0001; // 死亡／施法後停在最後一格
+    e._animClock = (e._animClock || 0) + dt;
+    var t = e._animClock;
+    if (def.loop) {
+      t = t % dur;
+    } else if (t >= dur) {
+      t = dur - 0.0001; // 單次動作停在最後一格
     }
+
+    // 依「每格原始毫秒 × 整體伸縮」換算目前格數
+    var scale = dur / total;
     var acc = 0;
     for (var f = 0; f < n; f++) {
-      acc += (durs[f] || 120) / 1000;
+      acc += (durs[f] || 120) / 1000 * scale;
       if (t < acc) return f;
     }
     return n - 1;
@@ -1508,79 +2211,168 @@
     var set = e.mon ? MON[e.mon] : null;
     if (set && (set.idle || set.walk)) {
       var state = e.dying ? "die" : (e.state || "idle");
+      // 若該動作缺圖，退回其它動作時也要用「實際使用的那張圖」的格數，
+      // 否則會拿 special 的格數去切 attack 的圖，畫面會出現半截身體。
+      var usedState = state;
       var img = set[state];
-      if (!img && state === "special") img = set.attack;
-      if (!img && state === "hurt") img = set.idle;
-      if (!img) img = set.walk || set.idle || set.attack || set.die;
+      if (!img && state === "special") { img = set.attack; usedState = "attack"; }
+      if (!img && state === "hurt") { img = set.idle; usedState = "idle"; }
+      if (!img && state === "attack") { img = set.special; usedState = "special"; }
+      if (!img) { img = set.walk || set.idle || set.attack || set.die; usedState = set.walk ? "walk" : (set.idle ? "idle" : (set.attack ? "attack" : "die")); }
       if (!img || !img.height) return;
 
-      var meta = monsterMeta(e.mon, state);
+      var meta = monsterMeta(e.mon, usedState);
       // 舊格式（沒有 sheets.json）時整張圖就是單格
       var fw = meta ? meta.w : img.width;
       var fh = meta ? meta.h : img.height;
       var n = meta ? meta.n : 1;
-      var frame = meta ? sheetFrameIndex(e, state, meta, time) : 0;
+      var frame = meta ? sheetFrameIndex(e, usedState, meta, time) : 0;
 
-      var bossMul = e.isBoss ? 1.45 : 1;
-      var targetH = clampNum(58 + (fh - 50) * 0.72, 58, 150) * bossMul * (scaleMul || 1);
+      // 尺寸以「畫面上看得清楚動作」為準：小怪 58~148px、精英再大一點、霸主約 215px。
+      // 先前小怪最低只有 46px，在 1280x720 下幾乎看不清揮擊與倒地。
+      var baseH = clampNum(58 + (fh - 42) * 0.78, 58, 148);
+      var targetH = baseH * (e.isBoss ? 1.45 : (e.elite ? 1.12 : 1)) * (scaleMul || 1);
       var scale = targetH / fh;
       var w = fw * scale;
       var h = fh * scale;
 
-      // 死亡動畫：前 0.7 秒完整播放，最後 0.3 秒淡出
-      var alpha = e.dying ? clampNum((e.dieT || 0) / 0.3, 0, 1) : 1;
+      // 死亡動畫：完整播放，最後 0.35 秒才淡出
+      var alpha = e.dying ? clampNum((e.dieT || 0) / 0.35, 0, 1) : 1;
       var phase = e.animPhase || (e.x * 0.013 + e.y * 0.007);
       var bob = 0, dxOff = 0, dyOff = 0, rot = 0;
-      var walkPhase = time * (6.4 + (e.animSpeed || 0)) + phase;
+      var walkPhase = time * (5.4 + (e.animSpeed || 0) * 0.1) + phase;
       var moving = state === "walk";
 
       if (moving) {
+        // 素材本身就有完整的步行循環，程式只補上極小幅度的重心起伏，
+        // 不再用大位移／大旋轉蓋掉原版 GIF 的步伐。
+        // 不同物種使用不同節奏：跳躍、重踏、蛇行、振翅、滑行、爬行、踱步…
         var stride = Math.abs(Math.sin(walkPhase));
         var ws = e.walkStyle || "stalk";
-        if (ws === "hop") {
-          bob = stride * (3.2 + clampNum((e.spd || 100) / 130, 0, 1.4));
-          rot = Math.sin(walkPhase * 0.5) * 0.045 * (e.face || 1);
-        } else if (ws === "stomp") {
-          bob = stride * 2.4;
-          dxOff = Math.sin(walkPhase * 0.5) * 2.4;
-          rot = Math.sin(walkPhase * 0.5) * 0.03 * (e.face || 1);
+        var lean = Math.sin(walkPhase) * (e.face || 1);
+        if (ws === "hop" || ws === "bounce") {
+          bob = stride * (ws === "bounce" ? 2.6 : 1.8);
+          rot = Math.sin(walkPhase * 0.5) * 0.02 * (e.face || 1);
+        } else if (ws === "stomp" || ws === "lumber") {
+          bob = stride * (ws === "lumber" ? 0.9 : 1.2);
+          rot = Math.sin(walkPhase * 0.5) * (ws === "lumber" ? 0.022 : 0.014) * (e.face || 1);
+          dxOff = lean * (ws === "lumber" ? 1.6 : 0.8);
         } else if (ws === "sway") {
-          bob = stride * 1.5;
-          rot = Math.sin(walkPhase * 0.5) * 0.07 * (e.face || 1);
-          dxOff = Math.sin(walkPhase * 0.5) * 2.2;
-        } else if (ws === "glide") {
-          bob = Math.sin(walkPhase * 0.5) * 1.4 - 1.2;
-          dxOff = Math.sin(walkPhase * 0.35) * 3.2;
-          rot = Math.sin(walkPhase * 0.3) * 0.02 * (e.face || 1);
-        } else {
-          bob = stride * (1.8 + clampNum((e.spd || 100) / 120, 0, 1.6));
-          dxOff = Math.sin(walkPhase * 0.5) * 1.4;
+          bob = stride * 0.8;
           rot = Math.sin(walkPhase * 0.5) * 0.03 * (e.face || 1);
+        } else if (ws === "glide" || ws === "float") {
+          bob = Math.sin(walkPhase * 0.5) * (ws === "float" ? 2.4 : 0.8) - 0.5;
+          rot = Math.sin(walkPhase * 0.3) * 0.012 * (e.face || 1);
+        } else if (ws === "flutter") {
+          bob = Math.abs(Math.sin(walkPhase * 1.35)) * 2.2 - 0.6;
+          rot = Math.sin(walkPhase * 0.65) * 0.035 * (e.face || 1);
+          dxOff = Math.sin(walkPhase * 0.5) * 1.4;
+        } else if (ws === "skitter") {
+          bob = Math.abs(Math.sin(walkPhase * 1.6)) * 1.1;
+          rot = Math.sin(walkPhase * 1.3) * 0.026 * (e.face || 1);
+          dxOff = Math.sin(walkPhase * 1.6) * 1.2;
+        } else if (ws === "slither") {
+          bob = Math.sin(walkPhase * 0.7) * 0.7;
+          rot = Math.sin(walkPhase * 0.7) * 0.032 * (e.face || 1);
+          dxOff = Math.sin(walkPhase * 0.9) * 2.4;
+        } else {
+          bob = stride * 0.9;
+          rot = Math.sin(walkPhase * 0.5) * 0.016 * (e.face || 1);
         }
       } else if (state === "attack") {
-        var pr = meta ? (1 - clampNum((e.stateT || 0) / (e._animMax || 0.45), 0, 1)) : 0.5;
-        var lunge = Math.sin(clampNum(pr, 0, 1) * Math.PI);
-        dxOff = lunge * 8 * (e.face || 1);
-        bob = -lunge * 2.4;
-        rot = lunge * 0.09 * (e.face || 1);
+        // 用動畫時鐘算進度（不依賴 stateT，狀態機中途改寫也不會卡住）
+        var atkDur = Math.max(0.2, e._animDur || 0.5);
+        var pr = clampNum((e._animClock || 0) / atkDur, 0, 1);
+        var st = (e.swing && e.swing.style) || e.atkStyle || "slash";
+        // 每一種攻擊都有不同的身體演出，畫面上一眼能分辨牠是怎麼打的
+        if (st === "pounce") {
+          var hop = Math.sin(pr * Math.PI);
+          dyOff = -hop * 16;
+          dxOff = hop * 12 * (e.face || 1);
+          rot = hop * 0.16 * (e.face || 1);
+        } else if (st === "slam" || st === "shockwave") {
+          var up = Math.sin(clampNum(pr / 0.55, 0, 1) * Math.PI * 0.5);
+          var down = pr > 0.55 ? Math.sin((pr - 0.55) / 0.45 * Math.PI) : 0;
+          dyOff = -up * 9 + down * 13;
+          rot = down * 0.10 * (e.face || 1);
+        } else if (st === "spin") {
+          rot = pr * Math.PI * 1.5 * (e.face || 1);
+          dxOff = Math.sin(pr * Math.PI) * 4 * (e.face || 1);
+        } else if (st === "spit") {
+          var kick = Math.sin(pr * Math.PI);
+          dxOff = -kick * 5 * (e.face || 1);
+          dyOff = -kick * 2;
+          rot = -kick * 0.09 * (e.face || 1);
+        } else if (st === "combo") {
+          var c1 = Math.sin(clampNum(pr / 0.4, 0, 1) * Math.PI);
+          var c2 = pr > 0.4 ? Math.sin(clampNum((pr - 0.4) / 0.6, 0, 1) * Math.PI) : 0;
+          dxOff = (c1 * 6 + c2 * 8) * (e.face || 1);
+          rot = (c1 * 0.06 - c2 * 0.05) * (e.face || 1);
+        } else if (st === "sweep" || st === "claw") {
+          var sw = Math.sin(pr * Math.PI);
+          dxOff = sw * 7 * (e.face || 1);
+          rot = -sw * 0.12 * (e.face || 1);
+          dyOff = -sw * 1.5;
+        } else if (st === "sting") {
+          var sn = Math.sin(pr * Math.PI);
+          dxOff = sn * 9 * (e.face || 1);
+        } else {
+          var lunge = Math.sin(clampNum(pr, 0, 1) * Math.PI);
+          dxOff = lunge * 6 * (e.face || 1);
+          dyOff = -lunge * 1.6;
+          rot = lunge * 0.07 * (e.face || 1);
+        }
       } else if (state === "special") {
-        bob = -2.5 - Math.abs(Math.sin(time * 5.2 + phase)) * 2.4;
-        rot = Math.sin(time * 3.4 + phase) * 0.025 * (e.face || 1);
+        // 詠唱：後仰聚氣 → 出手瞬間前傾，配合腳下法陣與技能名稱
+        var castPr = e.casting && e.casting.max > 0
+          ? 1 - clampNum(e.casting.t / e.casting.max, 0, 1)
+          : clampNum((e._animClock || 0) / Math.max(0.25, e._animDur || 0.35), 0, 1);
+        bob = -1.8 - Math.abs(Math.sin(time * 5.2 + phase)) * 2.2 - castPr * 2.5;
+        rot = (Math.sin(time * 3.4 + phase) * 0.02 - castPr * 0.05) * (e.face || 1);
+        dxOff = -castPr * 2.5 * (e.face || 1);
       } else if (state === "hurt") {
         dxOff = Math.sin(time * 72 + phase) * 2.6;
         rot = Math.sin(time * 55 + phase) * 0.05;
+        dyOff = -Math.abs(Math.sin(time * 34 + phase)) * 1.4;
       } else if (state === "die") {
-        var dp = 1 - clampNum((e.dieT || 0) / 1.0, 0, 1);
-        dyOff = dp * 3;
-        dxOff = dp * 3 * (e.face || 1);
+        // 死亡：倒地、下墜、淡出；用動畫時鐘確保整段一定會播完
+        var dieDur = Math.max(0.45, monsterAnimDuration(e.mon, "die"));
+        var dp = clampNum((e._animClock || 0) / dieDur, 0, 1);
+        dyOff = dp * 5;
+        dxOff = dp * 4 * (e.face || 1);
         rot = dp * 0.16 * (e.face || 1);
       } else {
-        bob = Math.sin(time * 3.2 + phase) * 1.1;
+        bob = Math.sin(time * 3.2 + phase) * 0.8;
       }
 
       e.visW = w;
       e.visH = h;
-      drawShadow(ctx, sx, sy, w * 0.82, e.dying ? alpha * 0.6 : 1);
+      drawShadow(ctx, sx, sy, w * 0.78, e.dying ? alpha * 0.6 : 1);
+
+      // 詠唱法陣：畫在怪物腳下，和施法讀條、技能名稱一起強化「正在施法」的辨識度
+      if (e.casting && !e.dying) {
+        var ck = 1 - clampNum(e.casting.t / (e.casting.max || 1), 0, 1);
+        var cr = w * (0.34 + ck * 0.26);
+        ctx.save();
+        ctx.globalAlpha = 0.38 + 0.22 * Math.sin(time * 12);
+        ctx.strokeStyle = (e.casting.sk && e.casting.sk.Color) || e.auraColor || "#b78bff";
+        ctx.shadowColor = ctx.strokeStyle;
+        ctx.shadowBlur = 12;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(sx, sy - 1, cr, cr * 0.42, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.rotate(0);
+        for (var ci2 = 0; ci2 < 5; ci2++) {
+          var ca2 = time * 1.6 + ci2 * Math.PI * 2 / 5;
+          ctx.beginPath();
+          ctx.arc(sx + Math.cos(ca2) * cr, sy - 1 + Math.sin(ca2) * cr * 0.42, 2.4, 0, Math.PI * 2);
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
       ctx.save();
       ctx.globalAlpha = alpha * (e.spawnFade !== undefined ? clampNum(e.spawnFade, 0, 1) : 1);
       ctx.imageSmoothingEnabled = false;
@@ -1592,13 +2384,13 @@
       ctx.drawImage(img, srcX, 0, sw, sh, -w / 2, -h, w, h);
       if (e.hitFlash > 0) {
         ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.5 * alpha;
+        ctx.globalAlpha = 0.55 * alpha;
         ctx.drawImage(img, srcX, 0, sw, sh, -w / 2, -h, w, h);
       }
       // 施法時把色彩疊在怪物身上，讓「正在詠唱」一眼看得出來
       if (e.casting && !e.dying) {
         ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.18 + 0.1 * Math.sin(time * 14);
+        ctx.globalAlpha = 0.2 + 0.12 * Math.sin(time * 14);
         ctx.drawImage(img, srcX, 0, sw, sh, -w / 2, -h, w, h);
       }
       ctx.restore();
@@ -1670,8 +2462,87 @@
     return out;
   }
 
+  function drawWeather(ctx, scene, vw, vh, time) {
+    var wd = scene.weather;
+    if (!wd) return;
+    var t = time;
+    ctx.save();
+    for (var i = 0; i < wd.dots.length; i++) {
+      var d = wd.dots[i];
+      var sp = wd.speed * d.sp;
+      var x, y, a = wd.alpha;
+      if (wd.kind === "sand" || wd.kind === "wind") {
+        x = (((d.x + t * sp * 0.06) % 1) + 1) % 1 * vw;
+        y = (d.y * vh + Math.sin(t * 0.6 + d.ph) * 14 + vh) % vh;
+        ctx.globalAlpha = a * (0.5 + 0.5 * Math.sin(t + d.ph));
+        ctx.strokeStyle = wd.color;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - wd.size * sp * 1.4, y + 1.4);
+        ctx.stroke();
+        continue;
+      }
+      var rise = wd.kind === "ember" || wd.kind === "bubble" || wd.kind === "mote" ||
+        wd.kind === "firefly" || wd.kind === "wisp";
+      var prog = d.y + t * sp * 0.045;
+      prog = prog - Math.floor(prog);
+      y = rise ? (1 - prog) * vh : prog * vh;
+      x = (d.x + Math.sin(t * 0.7 * sp + d.ph) * 0.022 * d.sw) * vw;
+      x = ((x % vw) + vw) % vw;
+      var s = (wd.size || 2) * d.sz;
+      ctx.globalAlpha = a * (0.6 + 0.4 * Math.sin(t * 1.6 + d.ph));
+      if (wd.kind === "snow") {
+        ctx.fillStyle = wd.color;
+        ctx.beginPath(); ctx.arc(x, y, s, 0, Math.PI * 2); ctx.fill();
+      } else if (wd.kind === "petal" || wd.kind === "leaf") {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(t * 1.2 + d.ph);
+        ctx.fillStyle = wd.color;
+        ctx.beginPath(); ctx.ellipse(0, 0, s * 1.8, s * 0.85, 0, 0, Math.PI * 2); ctx.fill();
+        if (wd.color2) {
+          ctx.fillStyle = wd.color2;
+          ctx.globalAlpha *= 0.55;
+          ctx.beginPath(); ctx.ellipse(0, 0, s * 1.05, s * 0.36, 0.4, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+      } else if (wd.kind === "drip" || wd.kind === "rain") {
+        ctx.strokeStyle = wd.color;
+        ctx.lineWidth = 1.3;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 1, y + wd.size * 2.2); ctx.stroke();
+      } else if (wd.kind === "star") {
+        ctx.fillStyle = wd.color;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(t * 0.6 + d.ph);
+        ctx.beginPath();
+        for (var k = 0; k < 4; k++) {
+          var aa = k * Math.PI / 2;
+          ctx.lineTo(Math.cos(aa) * s * 2.4, Math.sin(aa) * s * 2.4);
+          ctx.lineTo(Math.cos(aa + Math.PI / 4) * s * 0.7, Math.sin(aa + Math.PI / 4) * s * 0.7);
+        }
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      } else if (wd.kind === "bubble") {
+        ctx.strokeStyle = wd.color;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(x, y, s, 0, Math.PI * 2); ctx.stroke();
+      } else {
+        // ember / mote / firefly / wisp：雙層光點
+        ctx.fillStyle = wd.color;
+        ctx.globalAlpha = a * 0.22 * (0.6 + 0.4 * Math.sin(t * 2 + d.ph));
+        ctx.beginPath(); ctx.arc(x, y, s * 2.8, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = a * (0.55 + 0.45 * Math.sin(t * 2 + d.ph));
+        ctx.beginPath(); ctx.arc(x, y, s, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
   function drawAmbient(ctx, scene, cam, vw, vh, time) {
     if (!scene) return;
+    if (scene.weather) { drawWeather(ctx, scene, vw, vh, time); return; }
     var def = scene.biomeDef;
     var parts = ambientParticles(scene, cam, vw, vh, time);
     if (!parts) return;
@@ -1711,9 +2582,15 @@
   }
 
   function drawFog(ctx, scene, vw, vh) {
-    if (!scene || !scene.biomeDef || !scene.biomeDef.fog) return;
-    ctx.fillStyle = scene.biomeDef.fog;
-    ctx.fillRect(0, 0, vw, vh);
+    if (!scene) return;
+    if (scene.biomeDef && scene.biomeDef.fog) {
+      ctx.fillStyle = scene.biomeDef.fog;
+      ctx.fillRect(0, 0, vw, vh);
+    }
+    if (scene.scenery && scene.scenery.fog) {
+      ctx.fillStyle = scene.scenery.fog;
+      ctx.fillRect(0, 0, vw, vh);
+    }
   }
 
   // 技能圖示
@@ -1770,6 +2647,7 @@
     loadMonsters: loadMonsters,
     loadMonsterMeta: loadMonsterMeta,
     monsterMeta: monsterMeta,
+    monsterAnimDuration: monsterAnimDuration,
     monsterLoaded: monsterLoaded,
     monsterStates: monsterStates,
     monsterDir: MON_DIR,

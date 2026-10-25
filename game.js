@@ -132,6 +132,16 @@
     var idx = 0;
     function tryNext() {
       if (idx >= paths.length) {
+        // fetch 失敗（常見於直接雙擊 file://）：改用 config/game_config.js 的內嵌設定。
+        if (window.MOLI_CONFIG) {
+          try {
+            CONFIG = normalizeConfig(window.MOLI_CONFIG);
+            finish(true, "config/game_config.js（內嵌）");
+            return;
+          } catch (err) {
+            if (window.console) console.error(err);
+          }
+        }
         finish(false);
         return;
       }
@@ -355,10 +365,12 @@
       crit: 0, lifesteal: 0, atkCdScale: 1,
       critDmg: 1.8, areaScale: 1, hpRegen: 0, dodge: 0, execute: 0,
       multishot: 0, slowOnHit: 0, shieldOnKill: 0, expGain: 1,
+      armorPen: 0, dmgReduce: 0,
       spellCdScale: 1, spellCostScale: 1, shieldPower: 1,
+      ult: 0, ultMax: 100, ultReady: false,
       // 被動能力（升級卡）
-      abilities: { thorn: 0, killBoom: 0, frostAura: 0, holyNova: 0, timeField: 0, guardian: 0, manaFlow: 0, echo: 0, burn: 0, rage: 0, lifeBloom: 0, chainNova: 0, meteorMark: 0, arcaneOrbit: 0, frostbite: 0 },
-      abilityTimers: { frost: 0, holy: 0, time: 0, chain: 0, meteor: 0, orbit: 0 },
+      abilities: { thorn: 0, killBoom: 0, frostAura: 0, holyNova: 0, timeField: 0, guardian: 0, manaFlow: 0, echo: 0, burn: 0, rage: 0, lifeBloom: 0, chainNova: 0, meteorMark: 0, arcaneOrbit: 0, frostbite: 0, soulHarvest: 0, thunderMark: 0, frostBite: 0, elementalist: 0, swordWave: 0, arrowRain: 0, overload: 0, shieldRecharge: 0, berserk: 0, poisonNova: 0, galeWheel: 0, earthSpikes: 0, frostDomain: 0, windStep: 0, lastStand: 0, swordMastery: 0, bowMastery: 0, bladeCyclone: 0, voidRift: 0, starBurst: 0, thunderGod: 0, lastStand2: 0 },
+      abilityTimers: { frost: 0, holy: 0, time: 0, chain: 0, meteor: 0, orbit: 0, thunder: 0, arrow: 0, shield: 0, poison: 1.0, gale: 1.0, spikes: 1.6, domain: 0.4, blade: 0.6, void: 1.2, star: 0.8, god: 1.5, lastStand2: 1 },
       guardianUsed: false,
       rageStacks: 0, rageT: 0,
       echoFx: 0
@@ -407,6 +419,8 @@
       lasers: [],
       shockwaves: [],
       emitters: [],
+      interactables: [],
+      interactSpawnT: 20,
       time: 0,
       kills: 0,
       boomLock: false,
@@ -416,6 +430,8 @@
       spawnQueue: [],
       spawnTimer: 0,
       trickleT: 0,
+      packT: 9,
+      reinforcePending: 0,
       lastSpawnAt: 0,
       bossActive: null,
       bosses: [],
@@ -447,11 +463,15 @@
     document.getElementById("levelName").textContent =
       G.levelName + (loopCount ? " · 第 " + (loopCount + 1) + " 周目" : "");
     buildSkillBar();
+    buildInteractables(lv);
+    if (window.AUDIO && AUDIO.ambient) AUDIO.ambient(ambientForLevel(lv));
     showStageIntro(lv);
 
-    // 預覽用：?showcase=1 會在角色周圍排出該關卡的怪物，方便檢查美術與動作
+    // 預覽用：?showcase=1 會在角色周圍排出該關卡的怪物，並自動輪播
+    // 待機／行走／攻擊／施法／受傷／死亡六種動作，方便一眼檢查素材。
     if (((window.location && window.location.search) || "").indexOf("showcase") >= 0) {
       G.enemies.length = 0;
+      G.spawnQueue.length = 0;
       var showIds = (lv.MonsterIDs || []).slice(0, 30);
       var cols = Math.min(6, Math.max(1, Math.ceil(Math.sqrt(showIds.length))));
       for (var si = 0; si < showIds.length; si++) {
@@ -467,9 +487,12 @@
         en.spd = 0;
         en.atk = 0;
         en.spawnFade = 1;
+        en.showIdx = si % 6;
+        en.showStateT = 0.9 + (si % 6) * 0.4;
       }
-      G.paused = true; // 只做美術預覽，不推進戰鬥
       G.showcase = true;
+      G.showcaseT = 0;
+      toast("怪物動作展示：待機／行走／攻擊／施法／受傷／死亡");
     }
 
     nextRound();
@@ -492,7 +515,16 @@
           castSpell: castSpell,
           levelUp: levelUp,
           spawnEnemy: spawnEnemy,
-          nextRound: nextRound
+          nextRound: nextRound,
+          buildUpgradeChoices: buildUpgradeChoices,
+          abilityKeys: function () { return ABILITY_UPGRADES.map(function (a) { return a.key; }); },
+          statCount: function () { return STAT_UPGRADES.length; },
+          abilityDesc: function (key) {
+            for (var i = 0; i < ABILITY_UPGRADES.length; i++) {
+              if (ABILITY_UPGRADES[i].key === key) return ABILITY_UPGRADES[i].desc(2);
+            }
+            return null;
+          }
         };
       }
     } catch (e) {}
@@ -563,6 +595,25 @@
     }
     var rd = rounds[G.roundIndex];
     G.roundActive = true;
+    // 先補齊這一波會出現的怪物動作（走路／攻擊／施法／受傷／死亡），
+    // 避免上場時只有待機圖，看起來像「怪物不會動」。
+    if (window.ART && ART.loadMonsters) {
+      var preload = [];
+      (rd.EnemyIDs || []).forEach(function (id) {
+        var en = enemyById(num(id, 0));
+        if (en && en.Art && preload.indexOf(en.Art) < 0) preload.push(en.Art);
+      });
+      (rd.BossInfos || []).forEach(function (b) {
+        var ben = enemyById(num(b.EnemyID, 0));
+        if (ben && ben.Art && preload.indexOf(ben.Art) < 0) preload.push(ben.Art);
+        (b.Allies || []).forEach(function (aid) {
+          var aen = enemyById(num(aid, 0));
+          if (aen && aen.Art && preload.indexOf(aen.Art) < 0) preload.push(aen.Art);
+        });
+      });
+      if (preload.length) ART.loadMonsters(preload, null, ["idle", "walk", "attack", "special", "hurt", "die"]);
+    }
+    if (window.AUDIO) AUDIO.sfx("wave");
     G.roundTimer = num(rd.Duration, 0);
     G.spawnQueue = [];
     G.bossActive = null;
@@ -575,6 +626,8 @@
     G.emitters.length = 0;
     G.pendingHits.length = 0;
     G.trickleT = rand(0.8, 1.8);
+    G.packT = rand(8, 14);
+    G.reinforcePending = 0;
 
     // 霸主波保留場上殘留的地面效果會太混亂，一併清掉
     if (G.gimmick && G.gimmick.def) G.gimmick.timer = Math.max(6, num(G.gimmick.timer, 10));
@@ -619,14 +672,55 @@
     });
 
     G.spawnTimer = 0;
+    if (window.AUDIO) AUDIO.playBgm(bosses.length ? "boss" : levelBgm(G.levelIndex));
     toast("第 " + (G.roundIndex + 1) + " 波" + (bosses.length ? " · BOSS 來襲" : "") + (rd.Name ? " · " + rd.Name : ""));
     if (rd.Event) toast(rd.Event);
     if (bosses.length) showBossIntro(bosses[0], bosses.length > 1);
   }
 
   // 怪物 AI 原型：讓走路與進攻方式不再全部直線衝鋒
-  var OFFENSIVE_SKILLS = ["e_bolt", "e_spread", "e_chain", "e_meteor", "e_nova", "e_poison", "e_sand", "e_ice", "e_drain", "e_web"];
+  var OFFENSIVE_SKILLS = ["e_bolt", "e_spread", "e_chain", "e_meteor", "e_nova", "e_poison", "e_sand", "e_ice", "e_drain", "e_web", "e_breath", "e_quake", "e_laser", "e_orbit", "e_bomb", "e_storm"];
   var SUPPORT_SKILLS = ["e_heal", "e_shield", "e_enrage", "e_curse", "e_summon", "e_charge"];
+
+  // 每隻小怪依名字／圖鑑編號取得元素流派，招式、法陣與光環都用同一個色系。
+  var ELEMENT_SKILLS = {
+    fire:    [222, 203, 215, 204],
+    ice:     [202, 211, 216],
+    thunder: [208, 227, 200],
+    poison:  [201, 221, 226],
+    holy:    [214, 224, 220],
+    dark:    [213, 209, 218, 225],
+    earth:   [204, 217, 223],
+    wind:    [212, 224, 207],
+    water:   [211, 202, 221],
+    arcane:  [200, 225, 224]
+  };
+  var ELEMENT_COLORS = {
+    fire: "#ff7b3d", ice: "#8fd8ff", thunder: "#ffe066", poison: "#a8d46a",
+    holy: "#ffe9a8", dark: "#b78bff", earth: "#e6c98a", wind: "#9ff3d6",
+    water: "#6fc3ff", arcane: "#c9b3ff"
+  };
+  var ELEMENT_ALIASES = [
+    [/火|炎|焰|熔|爆|赤|烈/, "fire"],
+    [/冰|雪|寒|霜|凍/, "ice"],
+    [/雷|電|閃|轟/, "thunder"],
+    [/毒|腐|蟲|蛛|孢|菌/, "poison"],
+    [/聖|光|天|神|天使|祭司/, "holy"],
+    [/暗|影|冥|魂|靈|死|骨|魔|妖|鬼|詛咒/, "dark"],
+    [/岩|石|土|沙|龍|龜|甲|樹|木|花/, "earth"],
+    [/風|翼|鳥|羽|疾|空/, "wind"],
+    [/水|海|波|潮|魚|蝦|蟹|蛇/, "water"]
+  ];
+
+  function monsterElement(info) {
+    var name = (info && (info.Name || "")) || "";
+    for (var i = 0; i < ELEMENT_ALIASES.length; i++) {
+      if (ELEMENT_ALIASES[i][0].test(name)) return ELEMENT_ALIASES[i][1];
+    }
+    var keys = Object.keys(ELEMENT_SKILLS);
+    var h = num(info && info.ID, 0) + (name.length * 17);
+    return keys[Math.abs(h) % keys.length];
+  }
 
   function pickEnemyAi(info, isElite, castSkills, isBoss) {
     if (isBoss) return "boss";
@@ -652,10 +746,12 @@
   }
 
   function preferredRangeFor(ai) {
-    if (ai === "skirmisher") return 240 + rand(0, 80);
-    if (ai === "support") return 280 + rand(0, 80);
-    if (ai === "circler") return 105 + rand(0, 40);
-    if (ai === "charger") return 340;
+    if (ai === "skirmisher") return 180 + rand(0, 60);
+    if (ai === "support") return 170 + rand(0, 50);
+    // 環繞型以前停在 105~145 外圈，但近戰可及距離只有 44~72，
+    // 結果整場都在繞圈、永遠不攻擊。改成貼身環繞，讓牠們真的會出手。
+    if (ai === "circler") return 54 + rand(0, 14);
+    if (ai === "charger") return 300;
     return 0;
   }
 
@@ -663,30 +759,70 @@
   function atkStyleFor(info, isElite, ai) {
     var spd = num(info && info.SPD, 2);
     var tier = num(info && info.Tier, 1);
+    var name = (info && info.Name) || "";
     var roll = Math.random();
     if (ai === "skirmisher" && roll < 0.45) return "spit";
     if (ai === "support" && roll < 0.3) return "spit";
     if (isElite || tier >= 4) {
-      if (roll < 0.28) return "slam";
-      if (roll < 0.52) return "combo";
-      if (roll < 0.76) return "claw";
+      if (roll < 0.16) return "slam";
+      if (roll < 0.32) return "combo";
+      if (roll < 0.46) return "spin";
+      if (roll < 0.58) return "claw";
+      if (roll < 0.70) return "pounce";
+      if (roll < 0.82) return "sweep";
+      if (roll < 0.92) return "shockwave";
       return "slash";
     }
+    if (/蛇|蟒|蜥|龍/.test(name) && roll < 0.35) return "pounce";
+    if (/蟹|蠍|蛛|螳/.test(name) && roll < 0.4) return "sweep";
     if (spd >= 4.2) {
-      if (roll < 0.34) return "sting";
-      if (roll < 0.62) return "combo";
-      if (roll < 0.82) return "claw";
+      if (roll < 0.24) return "sting";
+      if (roll < 0.42) return "combo";
+      if (roll < 0.58) return "claw";
+      if (roll < 0.70) return "spin";
+      if (roll < 0.82) return "pounce";
       return "bite";
     }
-    if (roll < 0.3) return "bite";
-    if (roll < 0.52) return "slash";
-    if (roll < 0.7) return "claw";
-    if (roll < 0.84) return "sting";
+    if (roll < 0.24) return "bite";
+    if (roll < 0.42) return "slash";
+    if (roll < 0.58) return "claw";
+    if (roll < 0.70) return "sting";
+    if (roll < 0.82) return "sweep";
     return "combo";
+  }
+
+  // 精英怪不再只是「比較大隻」：每隻精英會帶一種鮮明的強化詞綴，
+  // 名稱、光環顏色、攻擊方式與掉落都會跟著改變。
+  var ELITE_MODS = [
+    { key: "fierce", name: "狂暴", color: "#ff7a7a", tip: "攻擊力 +35%",
+      apply: function (e) { e.atk *= 1.35; e.cdSpeed = 0.94; } },
+    { key: "swift", name: "迅捷", color: "#8ff3d6", tip: "移動與出手更快",
+      apply: function (e) { e.spd *= 1.3; e.cdSpeed = 0.72; e.animSpeed = Math.abs(e.animSpeed) + 1; } },
+    { key: "tough", name: "堅韌", color: "#ffd166", tip: "生命 +50%、防禦 +35%",
+      apply: function (e) { e.maxhp *= 1.5; e.hp = e.maxhp; e.def *= 1.35; } },
+    { key: "venom", name: "劇毒", color: "#a8d46a", tip: "命中留下毒沼",
+      apply: function (e) { e.venomOnHit = true; } },
+    { key: "arcane", name: "奧術", color: "#c9b3ff", tip: "詠唱大幅加速",
+      apply: function (e) { e.castSpeed = 0.62; } },
+    { key: "ward", name: "護盾", color: "#9fd8ff", tip: "開場獲得厚重護盾",
+      apply: function (e) { e.shield = e.maxhp * 0.35; e.shieldT = 9; } }
+  ];
+
+  function pickEliteMod(level) {
+    if (Math.random() < 0.25 && level < 4) return null;
+    return ELITE_MODS[Math.floor(Math.random() * ELITE_MODS.length)];
   }
 
   function walkStyleFor(info, ai) {
     var spd = num(info && info.SPD, 2);
+    var name = (info && info.Name) || "";
+    // 依物種給不同的步行演出，讓每一種怪看起來都有自己的移動方式
+    if (/蛇|蟒|蚯|蛆|蟲|蛛|蜈/.test(name)) return "slither";
+    if (/蝠|蜂|蝶|蛾|鳥|翼|妖精|燕|梟|鶴/.test(name)) return "flutter";
+    if (/蟹|蠍|蟻|螳|蛛/.test(name)) return "skitter";
+    if (/龍|龜|甲|巨神|巨人|石像|魔像|岩怪|樹精/.test(name)) return "lumber";
+    if (/史萊姆|果凍|布丁|幽靈|鬼|魂|煙|燈/.test(name)) return "float";
+    if (/兔|蛙|鼠|貓|犬|狼|狐|羊|鹿/.test(name)) return Math.random() < 0.5 ? "hop" : "bounce";
     if (ai === "brute" || num(info && info.Tier, 1) >= 5) return "stomp";
     if (spd >= 4.6) return "hop";
     if (ai === "circler" || ai === "zigzag") return "sway";
@@ -712,7 +848,9 @@
     if (!info) info = { ID: id, Name: "怪物" + id, ATK: 2, DEF: 2, SPD: 2, HP: 3 };
     var p = G.player;
     var ang = Math.random() * Math.PI * 2;
-    var radius = rand(380, 560);
+    // 出生距離壓在畫面邊緣附近：怪物一出現就看得見，不用等好幾秒才走進戰場，
+    // 攻擊／施法／死亡動作才不會全部發生在鏡頭外。
+    var radius = rand(250, 410);
     var x = clamp(p.x + Math.cos(ang) * radius, 40, G.worldW - 40);
     var y = clamp(p.y + Math.sin(ang) * radius, 40, G.worldH - 40);
 
@@ -729,8 +867,11 @@
     var eliteAtk = isElite ? 1.3 : 1;
     var castSkills = isBoss ? [] : enemyCastSkills(info, isElite);
     var ai = pickEnemyAi(info, isElite, castSkills, isBoss);
+    var element = isBoss ? "boss" : monsterElement(info);
 
-    var maxhp = (24 + num(info.HP, 3) * 18) * hpScale * (isBoss ? 4.2 : 1) * hpMul * eliteHp * (1 + loopCount * 0.55);
+    // 小怪血量以前偏高（Lv1 約 78），普攻要打三下才死，畫面上幾乎只看得到走路。
+    // 降低基礎血量後，一次普攻就能打出受傷與死亡動作，戰鬥回饋立即許多。
+    var maxhp = (13 + num(info.HP, 3) * 9) * hpScale * (isBoss ? 4.2 : 1) * hpMul * eliteHp * (1 + loopCount * 0.55);
     var shownName = (isBoss && bossInfo.Name) ? bossInfo.Name : (info.Name || "怪物");
     var e = {
       x: x, y: y, r: isBoss ? 26 : (isElite ? 17 : 13),
@@ -741,7 +882,9 @@
       hp: maxhp, maxhp: maxhp,
       atk: (4 + num(info.ATK, 2) * 2.4) * atkScale * (isBoss ? 1.7 : 1) * atkMul * eliteAtk * (1 + loopCount * 0.4),
       def: num(info.DEF, 2) * 1.8 * (isBoss ? 1.5 : 1) * (isElite ? 1.25 : 1),
-      spd: (38 + num(info.SPD, 2) * 8) * (isElite ? 0.94 : 1),
+      // 追得上玩家才有近身戰鬥；原本 38+SPD*8 約 54~70，玩家 120 以上，
+      // 怪物永遠在畫面邊緣散步，自然看不到攻擊動作。
+      spd: (48 + num(info.SPD, 2) * 12) * (isElite ? 0.96 : 1),
       isBoss: !!isBoss,
       elite: isElite,
       atkCd: rand(0.4, 1.4),
@@ -766,6 +909,8 @@
       castSkills: castSkills,
       castCd: rand(1.8, 4.2),
       casting: null,
+      element: element,
+      auraColor: isBoss ? (bossInfo.Color || "#ff9b6a") : (ELEMENT_COLORS[element] || "#b78bff"),
       slowT: 0, slowMul: 1,
       stunT: 0,
       shield: 0, shieldT: 0,
@@ -788,6 +933,7 @@
       spawnFxT: 0.5,
       hitDelay: 0,
       burnT: 0, burnDps: 0,
+      venomT: 0, venomDps: 0,
       errCount: 0,
       lastHp: maxhp,
       healLock: 0,
@@ -795,14 +941,24 @@
       enragedStall: false
     };
     G.enemies.push(e);
+    // 每一隻怪一出生就補齊六段動作。先前只在整關開場／換波時批次預載，
+    // 臨時增援或召喚出來的小怪可能先用待機圖上場，第一眼就看不到走路與攻擊。
+    if (window.ART && ART.loadMonster && e.mon) {
+      ART.loadMonster(e.mon, ["idle", "walk", "attack", "special", "hurt", "die"]);
+    }
     if (isBoss) {
       G.bossActive = e;
       G.bosses.push(e);
     } else {
       // 出生傳送門：讓「持續出怪」有清楚的視覺節奏
-      var pc = e.elite ? "#ffd166" : "#b78bff";
+      var pc = e.elite ? "#ffd166" : (e.auraColor || "#b78bff");
       pushCapped(G.fx, { type: "portal", x: x, y: y, r: e.r + 8, t: 0.5, max: 0.5, color: pc }, MAX_FX);
       pushCapped(G.fx, { type: "ring", x: x, y: y, r: e.r, max: e.r * 3.2, t: 0.42, color: pc }, MAX_FX);
+      if (isElite) {
+        pushCapped(G.fx, { type: "spikes", x: x, y: y, r: 70, t: 0.5, max: 0.5, color: "#ffd166" }, MAX_FX);
+        pushCapped(G.fx, { type: "flash", x: x, y: y, t: 0.4, max: 0.4, color: "#ffe9a8" }, MAX_FX);
+        if (window.AUDIO) AUDIO.sfx("elite");
+      }
     }
     return e;
   }
@@ -823,9 +979,19 @@
       var fb = skillById(num(info && info.Tier, 0) >= 3 ? 201 : 200) || skillById(200);
       if (fb && out.indexOf(fb) < 0) out.push(fb);
     }
-    if (isElite && out.length) {
-      var extra = skillById(206) || skillById(200);
-      if (extra && out.indexOf(extra) < 0) out.push(extra);
+    // 依怪物名稱／圖鑑編號給一個元素流派，讓每隻小怪的招式與顏色有辨識度。
+    // 這是原本「所有小怪都丟同一顆紫球」的主要修正。
+    var element = monsterElement(info);
+    var flavor = ELEMENT_SKILLS[element] || ELEMENT_SKILLS.arcane;
+    function addSkill(id) {
+      var sk = skillById(id);
+      if (!sk || out.length >= 3 || out.indexOf(sk) >= 0) return;
+      out.push(sk);
+    }
+    for (var fi = 0; fi < flavor.length && out.length < 2; fi++) addSkill(flavor[fi]);
+    if (isElite) {
+      addSkill(206);
+      if (out.length < 3) addSkill(219);
     }
     return out;
   }
@@ -836,8 +1002,20 @@
     opts = opts || {};
     var pl = G.player;
     var crit = !opts.noCrit && Math.random() < (pl.crit || 0);
-    var dmg = Math.max(1, amount - e.def * 0.55);
+    var dmg = Math.max(1, amount - e.def * 0.55 * (1 - Math.min(0.85, pl.armorPen || 0)));
     if (crit) dmg *= (pl.critDmg || 1.8);
+    // 背水一戰：殘血時傷害提升
+    if (pl.abilities && pl.abilities.lastStand > 0 && pl.hp / pl.maxhp < 0.45) {
+      dmg *= 1 + 0.12 * pl.abilities.lastStand;
+    }
+    // 霜咬：對已被減速的敵人有額外傷害；命中時也可能附加減速
+    if (pl.abilities && pl.abilities.frostBite > 0 && !e.isBoss) {
+      if (e.slowT > 0) dmg *= 1 + 0.07 * pl.abilities.frostBite;
+      else if (Math.random() < 0.12 * pl.abilities.frostBite) {
+        e.slowT = Math.max(e.slowT || 0, 1.6);
+        e.slowMul = Math.min(e.slowMul || 1, 0.72);
+      }
+    }
     // 斬殺：血量低於門檻的小怪直接處決
     var executed = false;
     if (!opts.noExecute && pl.execute > 0 && !e.isBoss && e.hp / e.maxhp <= pl.execute) {
@@ -853,6 +1031,24 @@
     }
     e.hp -= dmg;
     e.hitFlash = 0.12;
+    if (window.AUDIO) AUDIO.sfx(e.isBoss || dmg > e.maxhp * 0.22 ? "hitbig" : "hit");
+    // 雷鳴印記：命中時偶爾向鄰近敵人跳電
+    if (pl.abilities && pl.abilities.thunderMark > 0 && !opts.noProc && !e.isBoss) {
+      if (G.time - (pl._thunderAt || 0) > 0.6 && Math.random() < 0.05 * pl.abilities.thunderMark) {
+        pl._thunderAt = G.time;
+        var tmBest = null, tmD = 240 * 240;
+        for (var tmi = 0; tmi < G.enemies.length; tmi++) {
+          var tm = G.enemies[tmi];
+          if (tm === e || tm.dying || tm.isBoss) continue;
+          var tmd = dist2(tm, e);
+          if (tmd < tmD) { tmD = tmd; tmBest = tm; }
+        }
+        if (tmBest) {
+          dealDamage(tmBest, pl.atk * 0.4 * pl.abilities.thunderMark, { noCrit: true, noProc: true });
+          pushCapped(G.fx, { type: "chain", pts: [{ x: e.x, y: e.y - 10 }, { x: tmBest.x, y: tmBest.y - 10 }], t: 0.22, max: 0.22, color: "#ffe066" }, MAX_FX);
+        }
+      }
+    }
     if (pl.slowOnHit > 0 && !e.isBoss) {
       e.slowT = Math.max(e.slowT || 0, 1.4);
       e.slowMul = Math.min(e.slowMul || 1, 1 - pl.slowOnHit);
@@ -867,7 +1063,11 @@
       var kd = Math.hypot(kx, ky) || 1;
       e.x = clamp(e.x + kx / kd * 16, e.r, G.worldW - e.r);
       e.y = clamp(e.y + ky / kd * 16, e.r, G.worldH - e.r);
-      e.state = "hurt"; e.stateT = 0.16;
+      // 受傷動作只在「沒有在出手／詠唱」時播放，避免把攻擊動畫打斷成一直抽搐
+      if (!e.casting && !(e.state === "attack" && (e.stateT || 0) > 0.18)) {
+        e.state = "hurt";
+        e.stateT = 0.26;
+      }
     }
     pushCapped(G.floaters, {
       x: e.x, y: e.y - e.r - 6,
@@ -881,17 +1081,45 @@
   function killEnemy(e) {
     if (e.dying) return;
     e.dying = true;
-    e.dieT = 1.0;
+    // 依素材實際死亡動畫長度決定停留時間；播完再淡出，才看得到完整的倒地動作。
+    var dieLen = window.ART && ART.monsterAnimDuration ? ART.monsterAnimDuration(e.mon, "die") : 0;
+    e.dieT = Math.max(1.3, (dieLen || 0) + 0.55);
+    e.dieLen = Math.max(0.8, dieLen || 1.0);
     e.hp = 0;
     e.state = "die";
     e.stateT = 0;
     e.casting = null;
+    e.bossCast = null;
     e.windup = 0;
     e.dash = null;
     e.burnT = 0;
+    if (window.AUDIO) {
+      AUDIO.sfx(e.isBoss ? "killbig" : (e.elite ? "hitbig" : "kill"));
+      AUDIO.sfx(e.isBoss ? "monster_die_big" : "monster_die");
+    }
+    var p = G.player;
     G.kills++;
-    // 死亡後盡快補上新的怪物，維持戰鬥密度
-    if (G.roundActive) G.trickleT = Math.min(G.trickleT, 0.5);
+    // 終極技能充能：擊殺累積，精英與霸主給更多
+    if (p.ult < p.ultMax) {
+      p.ult = Math.min(p.ultMax, p.ult + (e.isBoss ? 45 : (e.elite ? 14 : 7)));
+      if (p.ult >= p.ultMax) {
+        p.ultReady = true;
+        toast("終極技能就緒！按 R 施放");
+        if (window.AUDIO) AUDIO.sfx("ready");
+      }
+    }
+    // 死亡後立刻補上新的怪物，維持戰鬥密度（不用等計時器）
+    if (G.roundActive) {
+      G.trickleT = Math.min(G.trickleT, 0.06);
+      // 擊殺即刻預約增援：不直接 push，避免在傷害迴圈中改動敵人陣列。
+      G.reinforcePending = Math.min(6, num(G.reinforcePending, 0) + 1);
+    }
+    // 每 12 擊殺來一波小怪突襲，讓清場後不會出現空窗
+    G.killStreak = (G.killStreak || 0) + 1;
+    if (G.killStreak % 12 === 0 && G.roundActive && !e.isBoss) {
+      G.packT = Math.min(num(G.packT, 9), 0.05);
+      pushCapped(G.floaters, { x: e.x, y: e.y - 46, text: "怪物增援！", t: 0.9, color: "#ffb15c", size: 13 }, MAX_FLOATERS);
+    }
     if (e.isBoss) {
       G.bosses = G.bosses.filter(function (b) { return b !== e; });
       G.bossActive = null;
@@ -900,7 +1128,6 @@
       }
     }
     // 吸血成長：擊殺回復生命
-    var p = G.player;
     if (p.lifesteal > 0) {
       var heal = p.maxhp * p.lifesteal;
       p.hp = Math.min(p.maxhp, p.hp + heal);
@@ -915,6 +1142,15 @@
       if (p.abilities.rage > 0) {
         p.rageStacks = Math.min(10, (p.rageStacks || 0) + 1);
         p.rageT = 5;
+      }
+      // 靈魂收割：擊殺縮短所有魔法冷卻並回復少量生命
+      if (p.abilities.soulHarvest > 0) {
+        var sh = p.abilities.soulHarvest;
+        for (var ssi = 0; ssi < p.spells.length; ssi++) {
+          p.spells[ssi].cd = Math.max(0, p.spells[ssi].cd - 0.35 * sh);
+        }
+        p.hp = Math.min(p.maxhp, p.hp + p.maxhp * 0.005 * sh);
+        pushCapped(G.fx, { type: "ring", x: e.x, y: e.y - 10, r: 8, max: 46, t: 0.3, color: "#9ff3d6" }, MAX_FX);
       }
     }
     // 擊殺護盾：消滅敵人時獲得短暫護盾
@@ -953,6 +1189,11 @@
     }
     p.invT = 0.26;
     var raw = Math.max(1, amount - p.def * 0.35);
+    // 韌性／背水一戰：減免受到的傷害
+    if (p.dmgReduce > 0) raw *= 1 - Math.min(0.6, p.dmgReduce);
+    if (p.abilities && p.abilities.lastStand > 0 && p.hp / p.maxhp < 0.45) {
+      raw *= 1 - Math.min(0.4, 0.06 * p.abilities.lastStand);
+    }
     // 荊棘之甲：反彈部分近戰傷害
     if (source && !source.dying && p.abilities && p.abilities.thorn > 0) {
       dealDamage(source, raw * 0.22 * p.abilities.thorn, { noCrit: true });
@@ -968,6 +1209,23 @@
     }
     p.hp -= raw;
     p.hitFlash = 0.15;
+    // 背水一戰：殘血時發出提示音與紅光
+    if (p.abilities && p.abilities.lastStand > 0 && p.hp > 0 && p.hp / p.maxhp < 0.45 &&
+        (!p._lastStandAt || G.time - p._lastStandAt > 6)) {
+      p._lastStandAt = G.time;
+      if (window.AUDIO) AUDIO.sfx("laststand");
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 12, r: 18, max: 120, t: 0.5, color: "#ff7a6a" }, MAX_FX);
+      pushCapped(G.floaters, { x: p.x, y: p.y - 66, text: "背水一戰", t: 0.9, color: "#ff9b8a" }, MAX_FLOATERS);
+    }
+    if (window.AUDIO) AUDIO.sfx("hurt");
+    // 低血量心跳提示（每 2 秒最多一次）
+    if (window.AUDIO && p.hp > 0 && p.hp / p.maxhp < 0.28) {
+      if (!p._lowHpAt || G.time - p._lowHpAt > 2.4) {
+        p._lowHpAt = G.time;
+        AUDIO.sfx("lowhp");
+      }
+    }
+    p.ult = Math.min(p.ultMax, (p.ult || 0) + 2.5 + raw / Math.max(1, p.maxhp) * 24);
     G.floaters.push({ x: p.x, y: p.y - 30, text: "-" + Math.round(raw), t: 0.7, color: color || "#ff7b7b" });
     if (p.hp <= 0) {
       // 守護天使：每場一次，瀕死時以 50% 生命復活
@@ -978,6 +1236,7 @@
         p.shield = Math.max(p.shield, p.maxhp * 0.25);
         p.shieldT = 6;
         toast("守護天使發動！");
+        if (window.AUDIO) AUDIO.sfx("heal");
         G.fx.push({ type: "ring", x: p.x, y: p.y - 16, r: 30, max: 260, t: 0.8, color: "#ffe9a8" });
         return;
       }
@@ -1015,6 +1274,10 @@
         e.abilityCd = Math.min(e.abilityCd, 1.2);
         toast(e.name + " 進入狂暴！");
         G.fx.push({ type: "ring", x: e.x, y: e.y, r: 20, max: 300, t: 0.7, color: e.bossColor });
+        G.fx.push({ type: "flash", x: e.x, y: e.y, t: 0.5, max: 0.5, color: e.bossColor });
+        pushCapped(G.fx, { type: "spikes", x: e.x, y: e.y, r: 150, t: 0.6, max: 0.6, color: e.bossColor }, MAX_FX);
+        pushCapped(G.shockwaves, { x: e.x, y: e.y, r: 24, max: 320, t: 0, delay: 0, dmg: 0, color: e.bossColor, hit: true }, 20);
+        if (window.AUDIO) AUDIO.sfx("boss_phase");
       }
       if (e.phase === 2 && e.phase3At > 0 && ratio <= e.phase3At) {
         e.phase = 3;
@@ -1022,12 +1285,40 @@
         e.abilityCd = Math.min(e.abilityCd, 0.8);
         toast(e.name + " 進入狂亂！");
         G.fx.push({ type: "ring", x: e.x, y: e.y, r: 20, max: 360, t: 0.8, color: "#ff5a6e" });
+        G.fx.push({ type: "flash", x: e.x, y: e.y, t: 0.55, max: 0.55, color: "#ff5a6e" });
+        pushCapped(G.fx, { type: "lightning", x: e.x, y: e.y, t: 0.5, max: 0.5, color: "#ff5a6e" }, MAX_FX);
+        pushCapped(G.fx, { type: "spikes", x: e.x, y: e.y, r: 210, t: 0.7, max: 0.7, color: "#ff5a6e" }, MAX_FX);
+        pushCapped(G.shockwaves, { x: e.x, y: e.y, r: 24, max: 420, t: 0, delay: 0, dmg: 0, color: "#ff5a6e", hit: true }, 20);
+        if (window.AUDIO) AUDIO.sfx("boss_phase");
         // 狂亂時立刻清場再放招
         for (var q3 = 0; q3 < 8; q3++) {
           addBullet(e.x, e.y - 40, (q3 / 8) * Math.PI * 2, 220, e.atk * 0.35, e.bossColor, 8);
         }
       }
       e.auraT += dt;
+      // 霸主施法前搖：先亮起法陣、顯示技能名稱與集氣條，時間到才真正出手。
+      // 先前霸主技能是瞬間生效，玩家只會看到畫面突然爆開，看不出「牠正在放招」。
+      if (e.bossCast) {
+        e.bossCast.t -= dt;
+        e.state = "special";
+        e.stateT = Math.max(e.stateT, 0.12);
+        if (Math.random() < dt * 14) {
+          pushCapped(G.fx, {
+            type: "spark", x: e.x + rand(-e.r, e.r), y: e.y - 20 + rand(-14, 14),
+            r: 10 + Math.random() * 12, t: 0.22, max: 0.22,
+            color: e.bossCast.color || e.bossColor
+          }, MAX_FX);
+        }
+        if (e.bossCast.t <= 0) {
+          var bc = e.bossCast;
+          e.bossCast = null;
+          e.castT = Math.max(e.castT, 0.18);
+          e.stateT = 0.55;
+          castBossAbility(e, bc.kind);
+          if (window.AUDIO) AUDIO.sfx("boss_cast");
+        }
+        continue;
+      }
       // 防卡死：霸主長時間血量沒有下降時，關閉治療並進入狂暴
       if (!e.dying) {
         if (e.hp < (e.lastHp || e.maxhp) - 0.5) {
@@ -1074,10 +1365,25 @@
       var kind = list[e.abilityIndex % list.length];
       e.abilityIndex++;
       e.abilityCd = Math.max(1.35, 4.8 - num(G.level.Difficulty, 1) * 0.09 - (e.phase - 1) * 0.35);
-      e.castT = e.phase === 3 ? 0.3 : 0.45;
+      var wind = e.phase === 3 ? 0.55 : (e.phase === 2 ? 0.72 : 0.9);
+      e.bossCast = { kind: kind, name: abilityName(kind), t: wind, max: wind, color: e.bossColor };
       e.state = "special";
-      e.stateT = 0.55;
-      castBossAbility(e, kind);
+      e.stateT = wind + 0.15;
+      e.castGlow = 1;
+      e.face = p.x >= e.x ? 1 : -1;
+      pushCapped(G.fx, {
+        type: "cast", x: e.x, y: e.y - 10, t: wind, max: wind,
+        color: e.bossColor, r: e.r + 26
+      }, MAX_FX);
+      pushCapped(G.fx, {
+        type: "ring", x: e.x, y: e.y, r: e.r * 0.6, max: e.r * 3.1, t: wind, color: e.bossColor
+      }, MAX_FX);
+      pushCapped(G.floaters, {
+        x: e.x, y: e.y - (e.visH || 90) - 16,
+        text: "霸主詠唱 · " + abilityName(kind), t: wind + 0.3,
+        color: e.bossColor, size: 13
+      }, MAX_FLOATERS);
+      if (window.AUDIO) AUDIO.sfx("monster_cast");
     }
   }
 
@@ -1427,25 +1733,68 @@
     var atkSkill = skillById(p.atkSkillId) || { CD: 2, Params: [] };
     p.atkCd -= dt;
     if (p.atkCd <= 0) {
-      var target = nearestEnemy(p, 420);
+      var target = nearestEnemy(p, 520);
       if (target) {
-        p.atkCd = Math.max(0.14, num(atkSkill.CD, 2) * (p.atkCdScale || 1) * (1 - 0.03 * (p.rageStacks || 0)));
+        var berserk = (p.abilities && p.abilities.berserk > 0 && p.hp < p.maxhp * 0.4)
+          ? p.abilities.berserk : 0;
+        p.atkCd = Math.max(0.14, num(atkSkill.CD, 2) * (p.atkCdScale || 1)
+          * (1 - 0.03 * (p.rageStacks || 0)) * (1 - 0.06 * berserk));
         var percent = param(atkSkill, "Percent", 100);
         var count = Math.max(1, param(atkSkill, "Count", 1)) + (p.multishot || 0);
-        var dmg = p.atk * percent / 100;
+        var mastery = (p.spriteKey === "bow" ? p.abilities.bowMastery : p.abilities.swordMastery) || 0;
+        var dmg = p.atk * percent / 100 * (1 + 0.1 * berserk) * (1 + 0.14 * mastery);
         p.attackT = p.attackDur;
         p.dir = dirFromVector(target.x - p.x, target.y - p.y, p.dir);
+        if (window.AUDIO) AUDIO.sfx(p.spriteKey === "bow" ? "bow" : "swing");
         for (var i = 0; i < count; i++) {
-          var t = nearestEnemy(p, 460);
+          var t = nearestEnemy(p, 520);
           if (!t) break;
           dealDamage(t, dmg);
           if (p.spriteKey === "bow") {
             G.fx.push({ type: "arrow", x: p.x, y: p.y - 24, tx: t.x, ty: t.y - 16,
               t: 0.16, max: 0.16, color: "#ffe08a" });
+            // 箭矢貫穿：沿著命中方向再掃過最多 2 名敵人，讓弓手普攻也有群體回饋
+            var ax = p.x, ay = p.y - 24, bx = t.x, by = t.y - 16;
+            var vx = bx - ax, vy = by - ay, vl = Math.hypot(vx, vy) || 1;
+            var pierced = 0;
+            var bowSnap = G.enemies.slice();
+            for (var bj = 0; bj < bowSnap.length && pierced < 2 + mastery; bj++) {
+              var oe = bowSnap[bj];
+              if (oe === t || oe.dying) continue;
+              var tt = ((oe.x - ax) * vx + (oe.y - ay) * vy) / (vl * vl);
+              if (tt < 0 || tt > 1.3) continue;
+              var lx = ax + vx * tt, ly = ay + vy * tt;
+              if (Math.hypot(oe.x - lx, oe.y - ly) > 30) continue;
+              dealDamage(oe, dmg * 0.55);
+              G.fx.push({ type: "arrow", x: p.x, y: p.y - 24, tx: oe.x, ty: oe.y - 16,
+                t: 0.16, max: 0.16, color: "#ffd166" });
+              pierced++;
+            }
           } else {
-            G.fx.push({ type: "slash", x: t.x, y: t.y, t: 0.18, r: 26,
+            G.fx.push({ type: "slash", x: t.x, y: t.y, t: 0.18, r: 30,
               color: "#9fe8ff" });
+            // 劍士揮砍會掃到目標身邊的敵人：一次普攻砍倒一整群，死亡動作才連著出現
+            var cleaved = 0;
+            var swordSnap = G.enemies.slice();
+            for (var cj = 0; cj < swordSnap.length && cleaved < 3 + Math.floor(mastery / 2); cj++) {
+              var ce = swordSnap[cj];
+              if (ce === t || ce.dying) continue;
+              if (dist2(ce, t) > (74 + mastery * 8) * (74 + mastery * 8)) continue;
+              dealDamage(ce, dmg * 0.6);
+              G.fx.push({ type: "slash", x: ce.x, y: ce.y, t: 0.18, r: 24,
+                color: "#bfeaff" });
+              cleaved++;
+            }
           }
+        }
+        // 劍氣波：每次普攻朝目標方向送出一道穿透劍氣
+        if (p.abilities && p.abilities.swordWave > 0) {
+          var waveAng = Math.atan2(target.y - 16 - (p.y - 20), target.x - p.x);
+          spawnShot(p.x, p.y - 20, waveAng, 620,
+            p.atk * 0.28 * p.abilities.swordWave, "#bfeaff",
+            { pierce: 4, r: 15, life: 0.55, kind: "wind" });
+          pushCapped(G.fx, { type: "slash", x: p.x + Math.cos(waveAng) * 34, y: p.y - 20 + Math.sin(waveAng) * 34,
+            t: 0.16, r: 30, color: "#bfeaff" }, MAX_FX);
         }
         p.face = target.x >= p.x ? 1 : -1;
       } else {
@@ -1471,6 +1820,7 @@
               if (dist2(e, p) <= radius * radius) { dealDamage(e, p.atk * spPercent / 100); hits++; }
             });
             G.fx.push({ type: "ring", x: p.x, y: p.y, r: 20, max: radius, t: 0.45, color: "#ffd166" });
+            if (window.AUDIO) AUDIO.sfx("cast2");
             if (hits > 0) toast(sp.Name + "！");
           }
         }
@@ -1506,6 +1856,10 @@
         e.slowMul = Math.min(e.slowMul, 1 - opts.slow);
       }
       if (opts.stun) e.stunT = Math.max(e.stunT, opts.stun);
+      if (opts.poison) {
+        e.venomT = Math.max(e.venomT || 0, opts.poisonT || 3.2);
+        e.venomDps = Math.max(e.venomDps || 0, opts.poison);
+      }
       hit++;
     }
     if (radius > 0) {
@@ -1653,6 +2007,248 @@
         pushCapped(G.fx, { type: "orbit", x: p.x, y: p.y - 10, r: orbR, t: 0.5, max: 0.5, color: "#9fd8ff" }, MAX_FX);
       }
     }
+    // 追魂箭雨：朝最近的敵群從天上落下箭矢
+    if (ab.arrowRain > 0) {
+      p.abilityTimers.arrow -= dt;
+      if (p.abilityTimers.arrow <= 0) {
+        var arTarget = nearestEnemy(p, 560);
+        if (arTarget) {
+          p.abilityTimers.arrow = Math.max(2.6, 5.2 - ab.arrowRain * 0.5);
+          var arCount = 5 + ab.arrowRain * 2;
+          for (var ar = 0; ar < arCount; ar++) {
+            var arx = clamp(arTarget.x + rand(-130, 130), 40, G.worldW - 40);
+            var ary = clamp(arTarget.y + rand(-110, 110), 40, G.worldH - 40);
+            spawnShot(arx, ary - 300 - ar * 12, Math.PI / 2 + rand(-0.08, 0.08), 760,
+              p.atk * 0.3, "#ffe9a8", { pierce: 1, r: 10, life: 0.5, kind: "arrow" });
+            pushCapped(G.fx, { type: "tell", x: arx, y: ary, r: 16, t: 0.32, max: 0.32, color: "#ffe9a8" }, MAX_FX);
+          }
+          pushCapped(G.fx, { type: "ring", x: arTarget.x, y: arTarget.y, r: 30, max: 180, t: 0.4, color: "#ffe9a8" }, MAX_FX);
+          if (window.AUDIO) AUDIO.sfx("bow");
+        }
+      }
+    }
+    // 護盾回充：定期自動補上護盾
+    if (ab.shieldRecharge > 0) {
+      p.abilityTimers.shield -= dt;
+      if (p.abilityTimers.shield <= 0) {
+        p.abilityTimers.shield = Math.max(3.5, 7.5 - ab.shieldRecharge);
+        var srShield = p.maxhp * 0.04 * ab.shieldRecharge * (p.shieldPower || 1);
+        p.shield = Math.max(p.shield || 0, srShield);
+        p.shieldT = Math.max(p.shieldT || 0, 4.5);
+        pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 12, r: 18, max: 64, t: 0.4, color: "#9fd8ff" }, MAX_FX);
+        pushCapped(G.floaters, { x: p.x, y: p.y - 58, text: "護盾 +" + Math.round(srShield), t: 0.8, color: "#9fd8ff" }, MAX_FLOATERS);
+      }
+    }
+    // 腐毒新星：在身邊噴發毒霧，留下持續中毒
+    if (ab.poisonNova > 0) {
+      p.abilityTimers.poison -= dt;
+      if (p.abilityTimers.poison <= 0) {
+        p.abilityTimers.poison = Math.max(2.6, 4.4 - ab.poisonNova * 0.4);
+        var pnR = 130 + ab.poisonNova * 16;
+        damageArea(p.x, p.y, pnR, p.atk * 0.35 * ab.poisonNova, "#8ee36a", {
+          slow: 0.18, slowT: 1.8,
+          poison: p.atk * 0.18 * ab.poisonNova, poisonT: 3.2
+        });
+        pushCapped(G.fx, { type: "void", x: p.x, y: p.y - 8, r: pnR * 0.9, t: 0.7, max: 0.7, color: "#7bd45c" }, MAX_FX);
+        pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 8, r: 20, max: pnR, t: 0.5, color: "#8ee36a" }, MAX_FX);
+        if (window.AUDIO) AUDIO.sfx("poison");
+      }
+    }
+    // 旋風輪：向四周射出穿透風刃
+    if (ab.galeWheel > 0) {
+      p.abilityTimers.gale -= dt;
+      if (p.abilityTimers.gale <= 0) {
+        p.abilityTimers.gale = Math.max(2.4, 3.8 - ab.galeWheel * 0.3);
+        var gwN = 8 + ab.galeWheel * 2;
+        var gwOff = G.time * 1.7;
+        for (var gw = 0; gw < gwN; gw++) {
+          var gwA = gwOff + (gw / gwN) * Math.PI * 2;
+          spawnShot(p.x, p.y - 18, gwA, 560, p.atk * 0.42 * ab.galeWheel, "#b8f0e2",
+            { pierce: 4, r: 12, life: 0.95, kind: "wind" });
+        }
+        pushCapped(G.fx, { type: "orbit", x: p.x, y: p.y - 12, r: 46 + ab.galeWheel * 10, t: 0.45, max: 0.45, color: "#b8f0e2" }, MAX_FX);
+        pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 12, r: 24, max: 120 + ab.galeWheel * 14, t: 0.35, color: "#d8fff4" }, MAX_FX);
+        if (window.AUDIO) AUDIO.sfx("gale");
+      }
+    }
+    // 大地尖刺：在最近的數名敵人腳下爆出尖刺
+    if (ab.earthSpikes > 0) {
+      p.abilityTimers.spikes -= dt;
+      if (p.abilityTimers.spikes <= 0) {
+        var esNeed = 2 + ab.earthSpikes;
+        var esList = [];
+        for (var esi = 0; esi < G.enemies.length; esi++) {
+          var ese = G.enemies[esi];
+          if (ese.dying) continue;
+          if (dist2(ese, p) > 520 * 520) continue;
+          esList.push({ e: ese, d: dist2(ese, p) });
+        }
+        if (esList.length) {
+          p.abilityTimers.spikes = Math.max(3.0, 5.6 - ab.earthSpikes * 0.5);
+          esList.sort(function (a, b) { return a.d - b.d; });
+          for (var esn = 0; esn < esNeed && esn < esList.length; esn++) {
+            var est = esList[esn].e;
+            dealDamage(est, p.atk * 1.05 * ab.earthSpikes, { noCrit: false });
+            est.slowT = Math.max(est.slowT || 0, 1.6);
+            est.slowMul = Math.min(est.slowMul || 1, 0.6);
+            pushCapped(G.fx, { type: "spikes", x: est.x, y: est.y, r: 62, t: 0.5, max: 0.5, color: "#c8a165" }, MAX_FX);
+            pushCapped(G.fx, { type: "tell", x: est.x, y: est.y, r: 58, t: 0.22, max: 0.22, color: "#e8c98c" }, MAX_FX);
+          }
+          if (window.AUDIO) AUDIO.sfx("spikes");
+        }
+      }
+    }
+    // 極寒領域：持續擴散寒氣，範圍緩速與傷害
+    if (ab.frostDomain > 0) {
+      p.abilityTimers.domain -= dt;
+      if (p.abilityTimers.domain <= 0) {
+        p.abilityTimers.domain = Math.max(1.4, 2.4 - ab.frostDomain * 0.25);
+        var fdR = 120 + ab.frostDomain * 16;
+        damageArea(p.x, p.y, fdR, p.atk * 0.2 * ab.frostDomain, "#a8e4ff", { slow: 0.42, slowT: 1.5 });
+        pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 8, r: fdR * 0.35, max: fdR, t: 0.55, color: "#a8e4ff" }, MAX_FX);
+        pushCapped(G.fx, { type: "vortex", x: p.x, y: p.y - 6, r: fdR * 0.55, t: 0.5, max: 0.5, color: "#d6f4ff" }, MAX_FX);
+        if (window.AUDIO) AUDIO.sfx("frost");
+      }
+    }
+    // 劍刃迴旋：向四周甩出穿透劍氣
+    if (ab.bladeCyclone > 0) {
+      p.abilityTimers.blade -= dt;
+      if (p.abilityTimers.blade <= 0) {
+        p.abilityTimers.blade = Math.max(2.0, 3.2 - ab.bladeCyclone * 0.3);
+        var bcn = 6 + ab.bladeCyclone * 2;
+        var bcoff = G.time * 2.1;
+        for (var bci = 0; bci < bcn; bci++) {
+          var bca = bcoff + (bci / bcn) * Math.PI * 2;
+          spawnShot(p.x, p.y - 18, bca, 540, p.atk * 0.48 * ab.bladeCyclone, "#ffe9a8",
+            { pierce: 4, r: 11, life: 1.05, kind: "wind" });
+        }
+        pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 12, r: 24, max: 130 + ab.bladeCyclone * 16, t: 0.4, color: "#ffe9a8" }, MAX_FX);
+        pushCapped(G.fx, { type: "orbit", x: p.x, y: p.y - 12, r: 60, t: 0.4, max: 0.4, color: "#fff4c8" }, MAX_FX);
+        if (window.AUDIO) AUDIO.sfx("gale");
+      }
+    }
+    // 虛空裂隙：在最近的敵群開洞，持續傷害並把敵人往中心拉
+    if (ab.voidRift > 0) {
+      p.abilityTimers.void -= dt;
+      if (p.abilityTimers.void <= 0) {
+        var vrTarget = nearestEnemy(p, 560);
+        if (vrTarget) {
+          p.abilityTimers.void = Math.max(3.6, 6.5 - ab.voidRift * 0.7);
+          var vrR = 130 + ab.voidRift * 18;
+          pushCapped(G.zones, {
+            x: clamp(vrTarget.x, 60, G.worldW - 60), y: clamp(vrTarget.y, 60, G.worldH - 60),
+            r: vrR, delay: 0, life: 2.6 + ab.voidRift * 0.3, max: 2.6 + ab.voidRift * 0.3,
+            dps: p.atk * 0.42 * ab.voidRift, color: "#b78bff", friendly: true, tick: 0,
+            slow: 0.25, kind: "rift", pull: 0.75
+          }, MAX_ZONES);
+          pushCapped(G.fx, { type: "void", x: vrTarget.x, y: vrTarget.y - 8, r: vrR * 1.1, t: 0.7, max: 0.7, color: "#b78bff" }, MAX_FX);
+          pushCapped(G.fx, { type: "vortex", x: vrTarget.x, y: vrTarget.y - 8, r: vrR, t: 0.6, max: 0.6, color: "#d9c6ff" }, MAX_FX);
+          if (window.AUDIO) AUDIO.sfx("cast_dark");
+        }
+      }
+    }
+    // 星辰爆裂：在最近的敵群落下數顆星辰
+    if (ab.starBurst > 0) {
+      p.abilityTimers.star -= dt;
+      if (p.abilityTimers.star <= 0) {
+        var sbTarget = nearestEnemy(p, 600);
+        if (sbTarget) {
+          p.abilityTimers.star = Math.max(2.8, 4.6 - ab.starBurst * 0.45);
+          for (var sbi = 0; sbi < 2 + ab.starBurst; sbi++) {
+            pushCapped(G.zones, {
+              x: clamp(sbTarget.x + rand(-130, 130), 40, G.worldW - 40),
+              y: clamp(sbTarget.y + rand(-130, 130), 40, G.worldH - 40),
+              r: 54, delay: 0.55 + sbi * 0.1, life: 0.3, max: 0.3,
+              dps: p.atk * 1.5 * ab.starBurst, color: "#ffe066", meteor: true, friendly: true, tick: 0
+            }, MAX_ZONES);
+          }
+          pushCapped(G.fx, { type: "ring", x: sbTarget.x, y: sbTarget.y, r: 20, max: 170, t: 0.45, color: "#ffe066" }, MAX_FX);
+          if (window.AUDIO) AUDIO.sfx("cast_arcane");
+        }
+      }
+    }
+    // 雷神之怒：連鎖雷擊並暈眩整串敵人
+    if (ab.thunderGod > 0) {
+      p.abilityTimers.god -= dt;
+      if (p.abilityTimers.god <= 0) {
+        var tgTarget = nearestEnemy(p, 540);
+        if (tgTarget) {
+          p.abilityTimers.god = Math.max(3.2, 5.6 - ab.thunderGod * 0.55);
+          var tgTargets = chainTargets(p, tgTarget, 4 + ab.thunderGod, 280);
+          var tgPts = [{ x: p.x, y: p.y - 20 }];
+          for (var tgi = 0; tgi < tgTargets.length; tgi++) {
+            var tge = tgTargets[tgi];
+            dealDamage(tge, p.atk * 0.72 * ab.thunderGod * Math.pow(0.88, tgi), { noCrit: true });
+            tge.stunT = Math.max(tge.stunT || 0, 0.5);
+            tgPts.push({ x: tge.x, y: tge.y - 12 });
+            pushCapped(G.fx, { type: "lightning", x: tge.x, y: tge.y - 10, r: 46, t: 0.3, max: 0.3, color: "#ffe066" }, MAX_FX);
+          }
+          pushCapped(G.fx, { type: "chain", pts: tgPts, t: 0.34, max: 0.34, color: "#ffe066" }, MAX_FX);
+          if (window.AUDIO) AUDIO.sfx("cast_thunder");
+        }
+      }
+    }
+    // 不屈意志：殘血時持續回復
+    if (ab.lastStand2 > 0) {
+      p.abilityTimers.lastStand2 -= dt;
+      if (p.abilityTimers.lastStand2 <= 0) {
+        p.abilityTimers.lastStand2 = 1;
+        if (p.hp / p.maxhp < 0.3 && p.hp > 0) {
+          var lsHeal = p.maxhp * 0.005 * ab.lastStand2;
+          p.hp = Math.min(p.maxhp, p.hp + lsHeal);
+          pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 14, r: 10, max: 48, t: 0.35, color: "#8fffb0" }, MAX_FX);
+        }
+      }
+    }
+  }
+
+  function castUltimate(manual) {
+    if (!G || G.over) return false;
+    var p = G.player;
+    if (G.paused) return false;
+    if (p.ult < p.ultMax) {
+      if (manual) toast("終極技能充能中 " + Math.floor(p.ult / p.ultMax * 100) + "%");
+      return false;
+    }
+    p.ult = 0;
+    p.ultReady = false;
+    var isBow = p.spriteKey === "bow";
+    var color = isBow ? "#9ff3d6" : "#ffe9a8";
+    pushCapped(G.fx, { type: "flash", x: p.x, y: p.y, t: 0.55, max: 0.55, color: color }, MAX_FX);
+    pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 12, r: 30, max: 520, t: 0.8, color: color }, MAX_FX);
+    if (window.AUDIO) AUDIO.sfx(isBow ? "ultbow" : "ultsword");
+
+    if (isBow) {
+      // 萬箭齊發：全方位箭雨，並在四周留下緩速箭幕
+      for (var i = 0; i < 36; i++) {
+        spawnShot(p.x, p.y - 24, (i / 36) * Math.PI * 2, 520 + (i % 3) * 90, p.atk * 1.4, color,
+          { pierce: 3, r: 10, kind: "wind", life: 1.8 });
+      }
+      for (var z = 0; z < 4; z++) {
+        var za = (z / 4) * Math.PI * 2;
+        pushCapped(G.zones, {
+          x: clamp(p.x + Math.cos(za) * 150, 40, G.worldW - 40),
+          y: clamp(p.y + Math.sin(za) * 150, 40, G.worldH - 40),
+          r: 110, delay: 0, life: 3.2, max: 3.2,
+          dps: p.atk * 0.5, color: color, friendly: true, tick: 0, slow: 0.55, kind: "storm"
+        }, MAX_ZONES);
+      }
+      p.shield = Math.max(p.shield, p.maxhp * 0.15);
+      p.shieldT = 6;
+    } else {
+      // 聖劍審判：巨型十字聖光，範圍暈眩並強化自身
+      damageArea(p.x, p.y, 430, p.atk * 5.5, color, { stun: 1.5, slow: 0.35, slowT: 2.5 });
+      pushCapped(G.fx, { type: "cross", x: p.x, y: p.y - 12, ang: 0, r: 300, t: 0.75, max: 0.75, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "cross", x: p.x, y: p.y - 12, ang: Math.PI / 4, r: 230, t: 0.65, max: 0.65, color: "#ffffff" }, MAX_FX);
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 12, r: 40, max: 460, t: 0.9, color: "#ffffff" }, MAX_FX);
+      p.hp = Math.min(p.maxhp, p.hp + p.maxhp * 0.2);
+      p.shield = Math.max(p.shield, p.maxhp * 0.3);
+      p.shieldT = 8;
+      p.atkBuffT = 6;
+      p.atkBuff = 1.25;
+    }
+    pushCapped(G.floaters, { x: p.x, y: p.y - 62, text: isBow ? "萬箭齊發！" : "聖劍審判！", t: 1.1, color: color }, MAX_FLOATERS);
+    return true;
   }
 
   function shouldAutoCast(sk) {
@@ -1691,6 +2287,11 @@
     var color = sk.Color || "#9fd8ff";
     var target = nearestEnemy(p, 620);
     var did = false;
+    if (window.AUDIO) {
+      AUDIO.sfx(sk.Kind === "heal" || sk.Kind === "shield" ? "cast2" : "cast");
+      var castEl = String(sk.Element || "").toLowerCase();
+      if (castEl) AUDIO.sfx("cast_" + castEl);
+    }
 
     if (sk.Kind === "fireball") {
       if (!target) return false;
@@ -1921,6 +2522,321 @@
       }
       pushCapped(G.fx, { type: "cast", x: p.x, y: p.y - 22, t: 0.35, max: 0.35, color: color }, MAX_FX);
       did = true;
+    } else if (sk.Kind === "earthslash") {
+      var esAng = target ? Math.atan2(target.y - p.y, target.x - p.x) : (p.dir >= 5 ? Math.PI : (p.dir >= 3 ? 0 : (p.dir >= 1 ? -Math.PI / 2 : Math.PI / 2)));
+      p.dir = dirFromVector(Math.cos(esAng), Math.sin(esAng), p.dir);
+      p.attackT = 0.4;
+      var esR = 260 * (p.areaScale || 1);
+      var esSnap = G.enemies.slice();
+      for (var esi = 0; esi < esSnap.length; esi++) {
+        var ee = esSnap[esi];
+        if (ee.dying) continue;
+        var ed = Math.hypot(ee.x - p.x, ee.y - p.y);
+        if (ed > esR) continue;
+        var ea = Math.atan2(ee.y - p.y, ee.x - p.x);
+        var ediff = Math.atan2(Math.sin(ea - esAng), Math.cos(ea - esAng));
+        if (Math.abs(ediff) > 1.05) continue;
+        dealDamage(ee, power, { noCrit: true });
+        ee.stunT = Math.max(ee.stunT || 0, 0.35);
+        ee.x = clamp(ee.x + Math.cos(esAng) * 18, ee.r, G.worldW - ee.r);
+        ee.y = clamp(ee.y + Math.sin(esAng) * 18, ee.r, G.worldH - ee.r);
+      }
+      pushCapped(G.fx, { type: "beam", x: p.x, y: p.y - 16, tx: p.x + Math.cos(esAng) * esR, ty: p.y - 16 + Math.sin(esAng) * esR, r: 46, t: 0.26, max: 0.26, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "spikes", x: p.x + Math.cos(esAng) * esR * 0.55, y: p.y + Math.sin(esAng) * esR * 0.55 - 8, r: esR * 0.7, t: 0.42, max: 0.42, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "slash", x: p.x + Math.cos(esAng) * 70, y: p.y + Math.sin(esAng) * 70 - 10, r: 72, t: 0.2, color: "#ffffff" }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "hunt") {
+      var huntList = [];
+      var huntSnap = G.enemies.slice();
+      huntSnap.sort(function (a, b) { return dist2(a, p) - dist2(b, p); });
+      for (var hi2 = 0; hi2 < huntSnap.length && huntList.length < 8; hi2++) {
+        if (!huntSnap[hi2].dying) huntList.push(huntSnap[hi2]);
+      }
+      if (!huntList.length && !target) return false;
+      for (var hh = 0; hh < 8; hh++) {
+        var ht = huntList[hh % Math.max(1, huntList.length)] || target;
+        if (!ht) break;
+        spawnShot(p.x, p.y - 22, Math.atan2(ht.y - p.y, ht.x - p.x) + rand(-0.18, 0.18), 430, power * 0.5, color,
+          { pierce: 1, r: 9, kind: "wind", life: 2.4, homing: 1.7 });
+      }
+      pushCapped(G.fx, { type: "arrow", x: p.x, y: p.y - 22, tx: p.x + 40, ty: p.y - 22, t: 0.16, max: 0.16, color: color }, MAX_FX);
+      p.attackT = p.attackDur * 0.6;
+      did = true;
+    } else if (sk.Kind === "sanctuary") {
+      p.hp = Math.min(p.maxhp, p.hp + p.maxhp * num(sk.Percent, 10) / 100);
+      damageArea(p.x, p.y, 210 * (p.areaScale || 1), power, color, { slow: 0.45, slowT: 2.6 });
+      pushCapped(G.zones, {
+        x: p.x, y: p.y, r: 150 * (p.areaScale || 1), delay: 0, life: 5.2, max: 5.2,
+        dps: power * 0.28, color: color, friendly: true, tick: 0, kind: "heal", slow: 0.2,
+        heal: p.maxhp * 0.018
+      }, MAX_ZONES);
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 10, r: 20, max: 300, t: 0.6, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "cross", x: p.x, y: p.y - 14, ang: 0, r: 140, t: 0.55, max: 0.55, color: "#ffffff" }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "thunderchain") {
+      if (!target) return false;
+      var tcTargets = chainTargets(p, target, 7, 300);
+      var tcPts = [{ x: p.x, y: p.y - 20 }];
+      for (var tci = 0; tci < tcTargets.length; tci++) {
+        dealDamage(tcTargets[tci], power * Math.pow(0.88, tci), { noCrit: true });
+        tcTargets[tci].stunT = Math.max(tcTargets[tci].stunT || 0, 0.45);
+        tcPts.push({ x: tcTargets[tci].x, y: tcTargets[tci].y - 12 });
+      }
+      pushCapped(G.fx, { type: "chain", pts: tcPts, t: 0.34, max: 0.34, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "lightning", x: target.x, y: target.y - 10, r: 70, t: 0.4, max: 0.4, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "ring", x: target.x, y: target.y, r: 20, max: 150, t: 0.4, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "shadow") {
+      if (!target) return false;
+      for (var shi = 0; shi < 6; shi++) {
+        var sha = (shi / 6) * Math.PI * 2 + G.time;
+        var shx = p.x + Math.cos(sha) * 26, shy = p.y - 18 + Math.sin(sha) * 16;
+        spawnShot(shx, shy, Math.atan2(target.y - p.y, target.x - p.x) + rand(-0.25, 0.25), 450, power * 0.45, color,
+          { pierce: 2, r: 8, kind: "bolt", life: 1.8, homing: 1.3 });
+        pushCapped(G.fx, { type: "spark", x: shx, y: shy, r: 12, t: 0.22, max: 0.22, color: color }, MAX_FX);
+      }
+      pushCapped(G.fx, { type: "void", x: p.x, y: p.y - 12, r: 90, t: 0.5, max: 0.5, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "phoenix") {
+      if (!target) return false;
+      var phAng = Math.atan2(target.y - p.y, target.x - p.x);
+      spawnShot(p.x, p.y - 24, phAng, 330, power, color,
+        { splash: 160, r: 20, kind: "flame", life: 2.6, homing: 0.9, burn: true });
+      pushCapped(G.fx, { type: "flamewave", x: p.x, y: p.y - 20, ang: phAng, r: 170, t: 0.4, max: 0.4, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 18, r: 18, max: 120, t: 0.4, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "icefield") {
+      var icx = target ? target.x : p.x, icy = target ? target.y : p.y;
+      var icr = 230 * (p.areaScale || 1);
+      damageArea(icx, icy, icr, power, color, { slow: 0.65, slowT: 3.8, stun: 0.9 });
+      pushCapped(G.zones, {
+        x: icx, y: icy, r: icr, delay: 0, life: 4.6, max: 4.6,
+        dps: power * 0.3, color: color, friendly: true, tick: 0, slow: 0.5, kind: "rift"
+      }, MAX_ZONES);
+      pushCapped(G.fx, { type: "spikes", x: icx, y: icy, r: icr, t: 0.6, max: 0.6, color: "#dff6ff" }, MAX_FX);
+      pushCapped(G.fx, { type: "ring", x: icx, y: icy, r: 20, max: icr, t: 0.6, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "swordrain") {
+      var swSnap = G.enemies.slice();
+      if (!swSnap.length) return false;
+      var swHits = 0;
+      for (var swi = 0; swi < 12; swi++) {
+        var swe = swSnap[Math.floor(Math.random() * swSnap.length)];
+        if (!swe || swe.dying) continue;
+        dealDamage(swe, power * 0.42, { noCrit: true });
+        pushCapped(G.fx, { type: "slash", x: swe.x, y: swe.y - 10, r: 34, t: 0.22, color: swi % 2 ? "#ffffff" : color }, MAX_FX);
+        pushCapped(G.fx, { type: "spark", x: swe.x, y: swe.y - 18, r: 16, t: 0.2, max: 0.2, color: color }, MAX_FX);
+        swHits++;
+      }
+      if (swHits) {
+        pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 14, r: 20, max: 260, t: 0.5, color: color }, MAX_FX);
+        did = true;
+      }
+    } else if (sk.Kind === "beam") {
+      if (!target) return false;
+      var bAng = Math.atan2(target.y - p.y, target.x - p.x);
+      p.dir = dirFromVector(target.x - p.x, target.y - p.y, p.dir);
+      p.attackT = 0.35;
+      var bLen = 760 * (p.areaScale || 1);
+      var bW = 30 * (p.areaScale || 1);
+      var bcx = Math.cos(bAng), bcy = Math.sin(bAng);
+      var bSnap = G.enemies.slice();
+      for (var bsi = 0; bsi < bSnap.length; bsi++) {
+        var be = bSnap[bsi];
+        if (be.dying) continue;
+        var bdx = be.x - p.x, bdy = (be.y - 10) - (p.y - 22);
+        var bAlong = bdx * bcx + bdy * bcy;
+        var bPerp = -bdx * bcy + bdy * bcx;
+        if (bAlong > 0 && bAlong < bLen && Math.abs(bPerp) < bW) {
+          dealDamage(be, power, { noCrit: true });
+          pushCapped(G.fx, { type: "spark", x: be.x, y: be.y - 16, r: 22, t: 0.26, max: 0.26, color: color }, MAX_FX);
+        }
+      }
+      pushCapped(G.fx, {
+        type: "beam", x: p.x, y: p.y - 22, tx: p.x + Math.cos(bAng) * bLen, ty: p.y - 22 + Math.sin(bAng) * bLen,
+        r: bW, t: 0.34, max: 0.34, color: color
+      }, MAX_FX);
+      pushCapped(G.fx, { type: "cast", x: p.x, y: p.y - 20, t: 0.3, max: 0.3, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "frostburst") {
+      if (!target && !manual) return false;
+      var fbTarget = target || p;
+      damageArea(fbTarget.x, fbTarget.y, 165 * (p.areaScale || 1), power, color, { slow: 0.55, slowT: 3.2 });
+      for (var fbi = 0; fbi < 3; fbi++) {
+        var fba = Math.random() * Math.PI * 2;
+        pushCapped(G.zones, {
+          x: clamp(fbTarget.x + Math.cos(fba) * rand(40, 100), 40, G.worldW - 40),
+          y: clamp(fbTarget.y + Math.sin(fba) * rand(40, 100), 40, G.worldH - 40),
+          r: 70 * (p.areaScale || 1), delay: 0, life: 3.4, max: 3.4,
+          dps: power * 0.35, color: color, friendly: true, tick: 0, slow: 0.45, kind: "rift"
+        }, MAX_ZONES);
+      }
+      pushCapped(G.fx, { type: "ring", x: fbTarget.x, y: fbTarget.y, r: 20, max: 220, t: 0.55, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "spikes", x: fbTarget.x, y: fbTarget.y, r: 120, t: 0.45, max: 0.45, color: "#d8f4ff" }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "starfall") {
+      if (!target) return false;
+      for (var sfi = 0; sfi < 18; sfi++) {
+        pushCapped(G.zones, {
+          x: clamp(target.x + rand(-260, 260) * (p.areaScale || 1), 40, G.worldW - 40),
+          y: clamp(target.y + rand(-260, 260) * (p.areaScale || 1), 40, G.worldH - 40),
+          r: 54, delay: 0.3 + sfi * 0.07, life: 0.3, max: 0.3,
+          dps: power * 1.6, color: color, meteor: true, friendly: true, tick: 0
+        }, MAX_ZONES);
+      }
+      pushCapped(G.fx, { type: "void", x: target.x, y: target.y - 10, r: 150, t: 0.8, max: 0.8, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "ring", x: target.x, y: target.y, r: 24, max: 340, t: 0.7, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "nova") {
+      var ncount = 14;
+      for (var nvi = 0; nvi < ncount; nvi++) {
+        spawnShot(p.x, p.y - 22, (nvi / ncount) * Math.PI * 2, 420, power * 0.55, color,
+          { pierce: 2, r: 9, kind: "prism", life: 1.6 });
+      }
+      damageArea(p.x, p.y, 120, power * 0.8, color, { slow: 0.25, slowT: 2 });
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 14, r: 20, max: 220, t: 0.55, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "orbit", x: p.x, y: p.y - 14, r: 120, t: 0.6, max: 0.6, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "bladecyclone") {
+      // 劍刃風暴：以自身為中心甩出大量旋轉劍氣，近身與遠程同時覆蓋
+      damageArea(p.x, p.y, 150 * (p.areaScale || 1), power * 0.7, color, { stun: 0.25 });
+      var bcn = 18;
+      for (var bci = 0; bci < bcn; bci++) {
+        var bca = (bci / bcn) * Math.PI * 2 + G.time;
+        spawnShot(p.x, p.y - 20, bca, 520, power * 0.4, bci % 3 ? color : "#ffffff",
+          { pierce: 3, r: 10, kind: "wind", life: 1.35 });
+      }
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 14, r: 24, max: 260, t: 0.55, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "orbit", x: p.x, y: p.y - 12, r: 130, t: 0.6, max: 0.6, color: "#fff4c8" }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "blackhole") {
+      // 黑洞引力：把敵人拉向中心並持續撕裂
+      if (!target) return false;
+      var bhR = 170 * (p.areaScale || 1);
+      damageArea(target.x, target.y, bhR, power, color, { slow: 0.4, slowT: 2.4 });
+      pushCapped(G.zones, {
+        x: target.x, y: target.y, r: bhR, delay: 0, life: 3.6, max: 3.6,
+        dps: power * 0.5, color: color, friendly: true, tick: 0, slow: 0.35, kind: "rift", pull: 1.15
+      }, MAX_ZONES);
+      pushCapped(G.fx, { type: "void", x: target.x, y: target.y - 8, r: bhR * 1.2, t: 0.85, max: 0.85, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "vortex", x: target.x, y: target.y - 8, r: bhR, t: 0.9, max: 0.9, color: "#d9c6ff" }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "sunburst") {
+      // 烈日審判：多層擴散火環，並在周圍留下灼燒地面
+      damageArea(p.x, p.y, 300 * (p.areaScale || 1), power, color, { stun: 0.35 });
+      for (var sbi = 0; sbi < 3; sbi++) {
+        pushCapped(G.zones, {
+          x: clamp(p.x + rand(-220, 220), 40, G.worldW - 40),
+          y: clamp(p.y + rand(-220, 220), 40, G.worldH - 40),
+          r: (95 + sbi * 16) * (p.areaScale || 1), delay: 0.35 + sbi * 0.15, life: 0.5, max: 0.5,
+          dps: power * 1.4, color: color, meteor: true, friendly: true, tick: 0
+        }, MAX_ZONES);
+      }
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 12, r: 24, max: 360, t: 0.65, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "flamewave", x: p.x, y: p.y - 14, ang: 0, r: 300, t: 0.5, max: 0.5, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "flash", x: p.x, y: p.y, t: 0.3, max: 0.3, color: "#ffd166" }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "dragonbreath") {
+      // 龍焰吐息：超寬錐形火焰，附帶燃燒
+      if (!target) return false;
+      var dbAng = Math.atan2(target.y - p.y, target.x - p.x);
+      p.dir = dirFromVector(target.x - p.x, target.y - p.y, p.dir);
+      var dbLen = 520 * (p.areaScale || 1);
+      var dbSnap = G.enemies.slice();
+      for (var dbi = 0; dbi < dbSnap.length; dbi++) {
+        var de = dbSnap[dbi];
+        if (de.dying) continue;
+        var ddx = de.x - p.x, ddy = de.y - p.y;
+        var dd = Math.hypot(ddx, ddy);
+        if (dd > dbLen) continue;
+        var da = Math.atan2(ddy, ddx);
+        var ddiff = Math.atan2(Math.sin(da - dbAng), Math.cos(da - dbAng));
+        if (Math.abs(ddiff) > 0.62) continue;
+        dealDamage(de, power, { noCrit: true });
+        de.burnT = Math.max(de.burnT || 0, 3.4);
+        de.burnDps = Math.max(de.burnDps || 0, power * 0.11);
+      }
+      pushCapped(G.fx, { type: "flamewave", x: p.x, y: p.y - 18, ang: dbAng, r: dbLen, t: 0.55, max: 0.55, color: color }, MAX_FX);
+      for (var dbw = 0; dbw < 6; dbw++) {
+        pushCapped(G.fx, {
+          type: "spark", x: p.x + Math.cos(dbAng + rand(-0.35, 0.35)) * (90 + dbw * 58),
+          y: p.y - 18 + Math.sin(dbAng + rand(-0.35, 0.35)) * (26 + dbw * 14),
+          r: 24 + dbw * 5, t: 0.42, max: 0.42, color: dbw % 2 ? color : "#ffe066"
+        }, MAX_FX);
+      }
+      did = true;
+    } else if (sk.Kind === "aurora") {
+      // 極光冰晶：沿著前方連續綻放三道冰環
+      if (!target) return false;
+      var auAng = Math.atan2(target.y - p.y, target.x - p.x);
+      p.dir = dirFromVector(target.x - p.x, target.y - p.y, p.dir);
+      for (var aui = 0; aui < 3; aui++) {
+        var aux = clamp(p.x + Math.cos(auAng) * (120 + aui * 130), 40, G.worldW - 40);
+        var auy = clamp(p.y + Math.sin(auAng) * (120 + aui * 130), 40, G.worldH - 40);
+        damageArea(aux, auy, 120 * (p.areaScale || 1), power * 0.62, color,
+          { slow: 0.55, slowT: 3.4, stun: aui === 2 ? 1.1 : 0.25 });
+        pushCapped(G.fx, { type: "ring", x: aux, y: auy - 8, r: 16, max: 190, t: 0.45, color: color }, MAX_FX);
+        pushCapped(G.fx, { type: "spikes", x: aux, y: auy, r: 105, t: 0.42, max: 0.42, color: "#dff6ff" }, MAX_FX);
+      }
+      pushCapped(G.fx, { type: "beam", x: p.x, y: p.y - 20, tx: p.x + Math.cos(auAng) * 520, ty: p.y - 20 + Math.sin(auAng) * 520, r: 40, t: 0.35, max: 0.35, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "thor") {
+      // 雷神之怒：超長連鎖雷擊，最後一擊留下雷暴區
+      if (!target) return false;
+      var thTargets = chainTargets(p, target, 10, 320);
+      var thPts = [{ x: p.x, y: p.y - 22 }];
+      for (var thi = 0; thi < thTargets.length; thi++) {
+        var the = thTargets[thi];
+        dealDamage(the, power * Math.pow(0.9, thi), { noCrit: true });
+        the.stunT = Math.max(the.stunT || 0, 0.55);
+        thPts.push({ x: the.x, y: the.y - 12 });
+        pushCapped(G.fx, { type: "lightning", x: the.x, y: the.y - 10, r: 54, t: 0.32, max: 0.32, color: color }, MAX_FX);
+      }
+      pushCapped(G.fx, { type: "chain", pts: thPts, t: 0.45, max: 0.45, color: color }, MAX_FX);
+      for (var thz = 0; thz < 4; thz++) {
+        pushCapped(G.zones, {
+          x: clamp(target.x + rand(-150, 150), 40, G.worldW - 40),
+          y: clamp(target.y + rand(-150, 150), 40, G.worldH - 40),
+          r: 64, delay: 0.3 + thz * 0.11, life: 0.3, max: 0.3,
+          dps: power * 1.3, color: color, meteor: true, friendly: true, tick: 0, kind: "lightning"
+        }, MAX_ZONES);
+      }
+      did = true;
+    } else if (sk.Kind === "bloodmoon") {
+      // 血月斬：360 度血刃，造成傷害並吸取生命
+      var bmR = 290 * (p.areaScale || 1);
+      var bmHeal = 0;
+      var bmSnap = G.enemies.slice();
+      for (var bmi = 0; bmi < bmSnap.length; bmi++) {
+        var bme = bmSnap[bmi];
+        if (bme.dying) continue;
+        if (Math.hypot(bme.x - p.x, bme.y - p.y) > bmR) continue;
+        var dealt = dealDamage(bme, power, { noCrit: true }) || 0;
+        bmHeal += dealt * 0.08;
+        pushCapped(G.fx, { type: "slash", x: bme.x, y: bme.y - 12, r: 40, t: 0.24, color: bmi % 2 ? "#ff5a6e" : "#ffd9e0" }, MAX_FX);
+      }
+      if (bmHeal > 0) {
+        p.hp = Math.min(p.maxhp, p.hp + bmHeal);
+        pushCapped(G.floaters, { x: p.x, y: p.y - 54, text: "+" + Math.round(bmHeal), t: 0.7, color: "#ff8a9a" }, MAX_FLOATERS);
+      }
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 12, r: 20, max: bmR, t: 0.55, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "cross", x: p.x, y: p.y - 12, ang: 0, r: bmR * 0.8, t: 0.45, max: 0.45, color: "#ff8a9a" }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "astralrift") {
+      // 星界裂隙：先塌縮再引爆，兩段式傷害
+      if (!target) return false;
+      var asR = 160 * (p.areaScale || 1);
+      pushCapped(G.zones, {
+        x: target.x, y: target.y, r: asR, delay: 0, life: 1.4, max: 1.4,
+        dps: power * 0.35, color: color, friendly: true, tick: 0, kind: "rift", pull: 1.4
+      }, MAX_ZONES);
+      pushCapped(G.zones, {
+        x: target.x, y: target.y, r: asR * 1.25, delay: 1.5, life: 0.4, max: 0.4,
+        dps: power * 3.4, color: "#ffe9a8", meteor: true, friendly: true, tick: 0
+      }, MAX_ZONES);
+      pushCapped(G.fx, { type: "void", x: target.x, y: target.y - 8, r: asR * 1.1, t: 1.0, max: 1.0, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "vortex", x: target.x, y: target.y - 8, r: asR, t: 0.9, max: 0.9, color: "#fff4c8" }, MAX_FX);
+      did = true;
     }
 
     if (did) {
@@ -1931,6 +2847,19 @@
         slot.cd *= 0.4;
         p.echoFx = 0.5;
         pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 16, r: 22, max: 120, t: 0.35, color: color }, MAX_FX);
+      }
+      // 元素超載：每 4 次施法引爆一圈元素衝擊
+      if (p.abilities && p.abilities.overload > 0) {
+        p._castCount = (p._castCount || 0) + 1;
+        if (p._castCount % 4 === 0) {
+          var ovDmg = power * 0.6 * p.abilities.overload;
+          var ovR = 160 + p.abilities.overload * 18;
+          damageArea(p.x, p.y - 10, ovR, ovDmg, color, { stun: 0.2 });
+          pushCapped(G.fx, { type: "vortex", x: p.x, y: p.y - 12, r: ovR, t: 0.5, max: 0.5, color: color }, MAX_FX);
+          pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 12, r: 20, max: ovR * 1.2, t: 0.5, color: "#ffffff" }, MAX_FX);
+          pushCapped(G.floaters, { x: p.x, y: p.y - 66, text: "元素超載！", t: 1.0, color: color }, MAX_FLOATERS);
+          if (window.AUDIO) AUDIO.sfx("cast_" + (String(sk.Element || "arcane").toLowerCase()));
+        }
       }
       if (sk.Icon && p.spells.length) {
         // 施法時角色面向最近的敵人
@@ -1959,6 +2888,24 @@
     return best;
   }
 
+  // 關卡水池／冰湖／熔岩／虛空：真的會影響戰鬥，而不只是背景裝飾
+  function poolAt(x, y) {
+    var pools = G.scene && G.scene.pools;
+    if (!pools) return null;
+    for (var i = 0; i < pools.length; i++) {
+      var pool = pools[i];
+      var dx = (x - pool.x) / Math.max(1, pool.r);
+      var dy = (y - pool.y) / Math.max(1, pool.r * (pool.squash || 0.6));
+      if (dx * dx + dy * dy <= 1) return pool;
+    }
+    return null;
+  }
+
+  var POOL_HINTS = {
+    water: "水域：移動變慢", oasis: "綠洲：移動變慢",
+    ice: "冰面：移動加速", lava: "熔岩：持續灼傷", void: "虛空：侵蝕生命"
+  };
+
   function updatePlayer(dt) {
     var p = G.player;
     var mx = 0, my = 0;
@@ -1975,16 +2922,50 @@
       if (d > 12) { mx = dx / d; my = dy / d; }
     }
 
+    var poolHere = poolAt(p.x, p.y);
+    p.inPool = poolHere ? poolHere.kind : null;
+    if (poolHere) {
+      p._poolSeen = p._poolSeen || {};
+      if (!p._poolSeen[poolHere.kind]) {
+        p._poolSeen[poolHere.kind] = 1;
+        toast(POOL_HINTS[poolHere.kind] || "特殊地形");
+      }
+    }
+    var terrainMul = 1;
+    if (poolHere) {
+      if (poolHere.kind === "ice") terrainMul = 1.28;
+      else if (poolHere.kind === "water" || poolHere.kind === "oasis") terrainMul = 0.78;
+      else if (poolHere.kind === "void") {
+        terrainMul = 0.86;
+        if (!p._voidT || G.time - p._voidT > 0.9) { p._voidT = G.time; damagePlayer(4, "#b78bff"); }
+      } else if (poolHere.kind === "lava") {
+        if (!p._lavaT || G.time - p._lavaT > 0.7) {
+          p._lavaT = G.time;
+          damagePlayer(7, "#ff8a3d");
+          pushCapped(G.fx, { type: "spark", x: p.x, y: p.y - 8, r: 14, t: 0.3, max: 0.3, color: "#ff8a3d" }, MAX_FX);
+        }
+      }
+    }
+
     var len = Math.hypot(mx, my);
     p.moving = len > 0;
     if (len > 0) {
       mx /= len; my /= len;
       p.dir = dirFromVector(mx, my, p.dir);
-      var moveSpd = p.spd * (p.slowT > 0 ? p.slowMul : 1);
+      var moveSpd = p.spd * (p.slowT > 0 ? p.slowMul : 1) * terrainMul;
       p.vx = mx * moveSpd; p.vy = my * moveSpd;
       p.x = clamp(p.x + p.vx * dt, p.r, G.worldW - p.r);
       p.y = clamp(p.y + p.vy * dt, p.r, G.worldH - p.r);
       if (Math.abs(mx) > 0.05) p.face = mx > 0 ? 1 : -1;
+      // 角色腳步聲與揚塵
+      p._stepT = (p._stepT || 0) - dt;
+      if (p._stepT <= 0) {
+        p._stepT = 0.31;
+        if (window.AUDIO) AUDIO.sfx("step");
+        pushCapped(G.fx, {
+          type: "dust", x: p.x, y: p.y + 2, r: 9, t: 0.24, max: 0.24, color: "#d8cfb4"
+        }, MAX_FX);
+      }
     } else {
       p.vx = 0; p.vy = 0;
     }
@@ -2024,6 +3005,7 @@
       }
       if (dd < 22) {
         G.orbs.splice(i, 1);
+        if (window.AUDIO) AUDIO.sfx("pickup");
         gainExp(o.v);
       }
     }
@@ -2042,6 +3024,7 @@
 
   function levelUp() {
     var p = G.player;
+    if (window.AUDIO) { AUDIO.sfx("levelup"); AUDIO.sfx("levelup2"); }
     p.maxhp += p.maxhp * G.grow.HP;
     p.maxmp += p.maxmp * Math.max(0.02, G.grow.MP || 0.02);
     p.mp = Math.min(p.maxmp, p.mp + p.maxmp * 0.25);
@@ -2084,7 +3067,10 @@
     { name: "多重射擊", desc: "普通攻擊額外命中 1 個目標（最多 +3）", icon: 10028, apply: function (p) { p.multishot = Math.min(3, (p.multishot || 0) + 1); } },
     { name: "冰緩打擊", desc: "命中使敵人減速 8%（上限 50%）", icon: 10045, apply: function (p) { p.slowOnHit = Math.min(0.5, (p.slowOnHit || 0) + 0.08); } },
     { name: "擊殺護盾", desc: "擊殺敵人獲得 2% 最大生命護盾", icon: 90036, apply: function (p) { p.shieldOnKill = (p.shieldOnKill || 0) + 0.02; } },
-    { name: "經驗加成", desc: "獲得的經驗值 +16%", icon: 30075, apply: function (p) { p.expGain = (p.expGain || 1) * 1.16; } }
+    { name: "經驗加成", desc: "獲得的經驗值 +16%", icon: 30075, apply: function (p) { p.expGain = (p.expGain || 1) * 1.16; } },
+    { name: "破甲", desc: "無視敵人防禦 12%（上限 60%）", icon: 10028, apply: function (p) { p.armorPen = Math.min(0.6, (p.armorPen || 0) + 0.12); } },
+    { name: "韌性", desc: "受到的傷害 -5%（上限 40%）", icon: 90036, apply: function (p) { p.dmgReduce = Math.min(0.4, (p.dmgReduce || 0) + 0.05); } },
+    { name: "靈巧", desc: "移動速度 +4%，閃避 +2%", icon: 10111, apply: function (p) { p.spd *= 1.04; p.dodge = Math.min(0.5, (p.dodge || 0) + 0.02); } }
   ];
 
   // 升級時可取得的被動能力（與純數值卡區隔）
@@ -2117,11 +3103,58 @@
     { key: "meteorMark", name: "流星印記", icon: 10015, max: 3,
       desc: function (r) { return "每 " + (8.0 - r * 0.8).toFixed(1) + " 秒在敵群降下 " + (1 + r) + " 顆流星"; } },
     { key: "arcaneOrbit", name: "奧術環繞", icon: 10139, max: 3,
-      desc: function (r) { return "每 0.5 秒以奧術光環切割身邊敵人，半徑 " + (82 + r * 14) + ""; } }
+      desc: function (r) { return "每 0.5 秒以奧術光環切割身邊敵人，半徑 " + (82 + r * 14) + ""; } },
+    { key: "soulHarvest", name: "靈魂收割", icon: 90035, max: 3,
+      desc: function (r) { return "擊殺時所有魔法冷卻 -" + (0.35 * r).toFixed(2) + " 秒，並回復 " + (0.5 * r).toFixed(1) + "% 生命"; } },
+    { key: "thunderMark", name: "雷鳴印記", icon: 10051, max: 3,
+      desc: function (r) { return "命中時有 " + (5 * r) + "% 機率觸發連鎖雷擊（" + (40 * r) + "% 攻擊力）"; } },
+    { key: "frostBite", name: "霜咬", icon: 10045, max: 3,
+      desc: function (r) { return "對減速敵人多造成 " + (7 * r) + "% 傷害；命中時有 " + (12 * r) + "% 機率附加減速"; } },
+    { key: "elementalist", name: "元素共鳴", icon: 10049, max: 3,
+      desc: function (r) { return "魔法傷害 +" + (12 * r) + "%，技能範圍 +" + (5 * r) + "%"; },
+      onApply: function (p) { p.spellPower *= 1.12; p.areaScale = (p.areaScale || 1) * 1.05; } },
+    { key: "swordWave", name: "劍氣波", icon: 10028, max: 3,
+      desc: function (r) { return "普通攻擊附加穿透劍氣，造成 " + (28 * r) + "% 攻擊力"; } },
+    { key: "swordMastery", name: "劍術精通", icon: 10078, max: 4, weapon: "sword",
+      desc: function (r) { return "普攻傷害 +" + (14 * r) + "%，揮砍範圍 +" + (8 * r) + "，可多掃 1 名敵人"; } },
+    { key: "bowMastery", name: "箭術精通", icon: 10011, max: 4, weapon: "bow",
+      desc: function (r) { return "普攻傷害 +" + (14 * r) + "%，箭矢可多貫穿 " + r + " 名敵人"; } },
+    { key: "arrowRain", name: "追魂箭雨", icon: 10051, max: 3,
+      desc: function (r) { return "每 " + (5.2 - r * 0.5).toFixed(1) + " 秒在最近的敵群降下 " + (5 + r * 2) + " 支箭"; } },
+    { key: "overload", name: "元素超載", icon: 10001, max: 3,
+      desc: function (r) { return "每 4 次施法引發元素爆炸，造成 " + (60 * r) + "% 魔法傷害並擊退"; } },
+    { key: "shieldRecharge", name: "護盾回充", icon: 90036, max: 3,
+      desc: function (r) { return "每 " + (7.5 - r).toFixed(1) + " 秒自動獲得 " + (4 * r) + "% 最大生命護盾"; } },
+    { key: "berserk", name: "狂戰之血", icon: 10111, max: 3,
+      desc: function (r) { return "生命低於 40% 時，傷害 +" + (10 * r) + "%、攻速 +" + (6 * r) + "%"; } },
+    { key: "poisonNova", name: "腐毒新星", icon: 10045, max: 3,
+      desc: function (r) { return "每 " + (4.4 - r * 0.4).toFixed(1) + " 秒噴發毒霧，每秒 " + (18 * r) + "% 攻擊力，持續 3.2 秒"; } },
+    { key: "galeWheel", name: "旋風輪", icon: 10051, max: 3,
+      desc: function (r) { return "每 " + (3.8 - r * 0.3).toFixed(1) + " 秒射出 " + (8 + r * 2) + " 道穿透風刃"; } },
+    { key: "earthSpikes", name: "大地尖刺", icon: 10015, max: 3,
+      desc: function (r) { return "每 " + (5.6 - r * 0.5).toFixed(1) + " 秒在 " + (2 + r) + " 名敵人腳下爆出尖刺"; } },
+    { key: "frostDomain", name: "極寒領域", icon: 10107, max: 2,
+      desc: function (r) { return "每 " + (2.4 - r * 0.25).toFixed(1) + " 秒擴散寒氣，範圍 " + (120 + r * 16) + "、造成減速"; } },
+    { key: "windStep", name: "疾風步", icon: 10111, max: 3,
+      desc: function () { return "移動速度 +6%，閃避 +3%"; },
+      onApply: function (p) { p.spd *= 1.06; p.dodge = Math.min(0.5, (p.dodge || 0) + 0.03); } },
+    { key: "lastStand", name: "背水一戰", icon: 90036, max: 3,
+      desc: function (r) { return "生命低於 45% 時，傷害 +" + (12 * r) + "%、受到傷害 -" + (6 * r) + "%"; } },
+    { key: "bladeCyclone", name: "劍刃迴旋", icon: 10028, max: 3,
+      desc: function (r) { return "每 " + (3.2 - r * 0.3).toFixed(1) + " 秒向四周射出 " + (6 + r * 2) + " 道穿透劍氣"; } },
+    { key: "voidRift", name: "虛空裂隙", icon: 10139, max: 3,
+      desc: function (r) { return "每 " + (6.5 - r * 0.7).toFixed(1) + " 秒在敵群撕開裂隙，持續 " + (2.6 + r * 0.3).toFixed(1) + " 秒並拉扯敵人"; } },
+    { key: "starBurst", name: "星辰爆裂", icon: 10015, max: 3,
+      desc: function (r) { return "每 " + (4.6 - r * 0.45).toFixed(1) + " 秒在最近的敵群落下 " + (2 + r) + " 顆星辰"; } },
+    { key: "thunderGod", name: "雷神之怒", icon: 10051, max: 3,
+      desc: function (r) { return "每 " + (5.6 - r * 0.55).toFixed(1) + " 秒降下連鎖雷擊，跳躍 " + (4 + r) + " 名敵人並暈眩"; } },
+    { key: "lastStand2", name: "不屈意志", icon: 90036, max: 2,
+      desc: function (r) { return "生命低於 30% 時，每秒回復 " + (0.5 * r).toFixed(1) + "% 生命"; } }
   ];
 
   // 升級時可以「新學」的魔法：書本最多 9 格，讓每局 Build 不同
-  var NEW_SPELL_IDS = [113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124];
+  var NEW_SPELL_IDS = [113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128,
+    129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144];
 
   function newSpellCard(sk) {
     return {
@@ -2160,6 +3193,7 @@
     var next = Math.min(a.max, rank + 1);
     return {
       type: "能力",
+      key: a.key,
       name: a.name,
       icon: a.icon,
       desc: a.desc(next) + "（" + next + "/" + a.max + "）",
@@ -2191,6 +3225,7 @@
     }
     var abilities = [];
     ABILITY_UPGRADES.forEach(function (a) {
+      if (a.weapon && a.weapon !== p.spriteKey) return;
       var rank = (p.abilities && p.abilities[a.key]) || 0;
       if (rank < a.max) abilities.push(abilityCard(a, rank));
     });
@@ -2199,6 +3234,18 @@
     });
     var special = magic.concat(abilities).concat(newSpells);
     var picks = [];
+    // 第一次升級先給職業專屬精通，讓劍士／弓箭手的 Build 從一開始就不同
+    var masteryKey = p.spriteKey === "bow" ? "bowMastery" : "swordMastery";
+    if (!(p.abilities && p.abilities[masteryKey] > 0)) {
+      var masteryDef = null;
+      for (var mi = 0; mi < ABILITY_UPGRADES.length; mi++) {
+        if (ABILITY_UPGRADES[mi].key === masteryKey) { masteryDef = ABILITY_UPGRADES[mi]; break; }
+      }
+      if (masteryDef) {
+        picks.push(abilityCard(masteryDef, 0));
+        special = special.filter(function (c) { return c.key !== masteryKey; });
+      }
+    }
     // 至少兩張魔法／能力卡，讓每次升級都能選到新玩法
     var guarantee = Math.min(2, special.length);
     for (var g = 0; g < guarantee; g++) {
@@ -2231,6 +3278,7 @@
         d.querySelector(".name").textContent = u.name;
         d.querySelector(".desc").textContent = u.desc;
         d.addEventListener("click", function () {
+          if (window.AUDIO) AUDIO.sfx("click");
           u.apply(G.player);
           G.upPending--;
           if (G.upPending > 0) { showUpgrades(); }
@@ -2269,19 +3317,30 @@
   }
 
   function startEnemyCast(e, sk) {
-    var castTime = Math.max(0.35, num(sk.CastTime, 0.55));
+    // 詠唱時間拉長到看得清楚「集氣 → 法陣 → 出手」的完整流程
+    var castTime = Math.min(1.7, Math.max(0.7, num(sk.CastTime, 0.55) * 1.35));
     e.casting = { sk: sk, t: castTime, max: castTime };
     e.state = "special";
     e.stateT = castTime + 0.2;
     e.castGlow = 1;
     e.face = G.player.x >= e.x ? 1 : -1;
+    var castColor = sk.Color || "#b78bff";
     pushCapped(G.fx, {
       type: "cast", x: e.x, y: e.y - 8, t: castTime, max: castTime,
-      color: sk.Color || "#b78bff", r: e.r + 12
+      color: castColor, r: e.r + 12
     }, MAX_FX);
+    // 技能名稱浮在怪物頭上：即使怪物很小、動作很快，也能一眼看出牠正在詠唱什麼
+    pushCapped(G.floaters, {
+      x: e.x, y: e.y - (e.visH || 64) - 12,
+      text: "詠唱 · " + (sk.Name || "技能"), t: castTime + 0.35,
+      color: castColor, size: 11
+    }, MAX_FLOATERS);
+    var el2 = String(sk.Element || e.element || "").toLowerCase();
+    if (window.AUDIO) AUDIO.sfx("cast_" + (el2 || "arcane"));
   }
 
   function executeEnemyCast(e, sk) {
+    if (window.AUDIO) AUDIO.sfx("ecast");
     var p = G.player;
     var ang = Math.atan2(p.y - e.y, p.x - e.x);
     var color = sk.Color || "#b78bff";
@@ -2380,6 +3439,70 @@
           minion.y = clamp(e.y + Math.sin(sa) * 70, 40, G.worldH - 40);
         }
       }
+    } else if (kind === "e_breath") {
+      // 扇形吐息：近距離的錐形傷害，地面會留下短暫的灼燒帶
+      var cone = num(sk.Radius, 96);
+      var half = 0.55;
+      var pd = Math.hypot(p.x - e.x, p.y - e.y);
+      var pa = Math.atan2(p.y - e.y, p.x - e.x);
+      var diff = Math.atan2(Math.sin(pa - ang), Math.cos(pa - ang));
+      if (pd < num(sk.Range, 380) && Math.abs(diff) < half) damagePlayer(dmg, color, e);
+      pushCapped(G.fx, {
+        type: "flamewave", x: e.x, y: e.y - 20, ang: ang, r: 150,
+        t: 0.34, max: 0.34, color: color
+      }, MAX_FX);
+      for (var bw = 0; bw < 3; bw++) {
+        pushCapped(G.fx, {
+          type: "spark", x: e.x + Math.cos(ang + rand(-0.35, 0.35)) * (60 + bw * 40),
+          y: e.y - 20 + Math.sin(ang + rand(-0.35, 0.35)) * (24 + bw * 16),
+          r: 20 + bw * 6, t: 0.3, max: 0.3, color: color
+        }, MAX_FX);
+      }
+    } else if (kind === "e_quake") {
+      // 震地：以自身為圓心的衝擊波，靠太近就會被震傷
+      var qr = num(sk.Radius, 130);
+      if (dist2(e, p) < qr * qr) damagePlayer(dmg, color, e);
+      pushCapped(G.shockwaves, {
+        x: e.x, y: e.y, r: 18, max: qr + 80, t: 0.55, maxT: 0.55,
+        dmg: 0, color: color, hit: true
+      }, 24);
+      pushCapped(G.fx, { type: "ring", x: e.x, y: e.y, r: 20, max: qr + 80, t: 0.5, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "dust", x: e.x, y: e.y, r: qr * 0.9, t: 0.5, max: 0.5, color: "#d8c39a" }, MAX_FX);
+    } else if (kind === "e_laser") {
+      // 直線光束：先有預警線，之後才點亮，玩家可以横向閃避
+      pushCapped(G.lasers, {
+        x: e.x, y: e.y - 18, ang: ang, warn: 0.65, active: 0.22, t: 0,
+        len: num(sk.Range, 680), width: num(sk.Width, 24), dmg: dmg, color: color, hit: false
+      }, 24);
+    } else if (kind === "e_orbit") {
+      // 幽能球：慢速追蹤，繞著玩家逼近
+      var on = 4 + (e.elite ? 2 : 0);
+      for (var oi = 0; oi < on; oi++) {
+        addBullet(e.x, e.y - 24, ang + (oi / on) * Math.PI * 2, 90, dmg * 0.55, color, 9,
+          { life: 4.6, homing: 1.30 });
+      }
+      pushCapped(G.fx, { type: "ring", x: e.x, y: e.y - 18, r: 12, max: 90, t: 0.45, color: color }, MAX_FX);
+    } else if (kind === "e_bomb") {
+      // 拋擲爆彈：先落地預警，延遲後爆炸
+      pushCapped(G.zones, {
+        x: clamp(p.x + rand(-30, 30), 40, G.worldW - 40),
+        y: clamp(p.y + rand(-30, 30), 40, G.worldH - 40),
+        r: num(sk.Radius, 84), delay: 0.75, life: 0.4, max: 0.4,
+        dps: dmg * 2.4, color: color, meteor: true, tick: 0
+      }, MAX_ZONES);
+      pushCapped(G.fx, { type: "spark", x: e.x, y: e.y - 30, r: 18, t: 0.28, max: 0.28, color: color }, MAX_FX);
+    } else if (kind === "e_storm") {
+      // 雷雨：在玩家周圍落下多道小雷擊
+      var stn = 3 + (e.elite ? 2 : 0);
+      for (var st = 0; st < stn; st++) {
+        pushCapped(G.zones, {
+          x: clamp(p.x + rand(-120, 120), 40, G.worldW - 40),
+          y: clamp(p.y + rand(-120, 120), 40, G.worldH - 40),
+          r: num(sk.Radius, 58), delay: 0.35 + st * 0.16, life: 0.3, max: 0.3,
+          dps: dmg * 1.4, color: color, meteor: true, lightning: true, tick: 0
+        }, MAX_ZONES);
+      }
+      pushCapped(G.fx, { type: "lightning", x: p.x, y: p.y, r: 20, t: 0.4, max: 0.4, color: color }, MAX_FX);
     }
 
     // 統一的施法爆發特效：讓小怪技能有明確的起手與元素辨識度
@@ -2465,16 +3588,30 @@
     return { vx: vx, vy: vy, moving: true };
   }
 
+  var ATK_LABELS = {
+    slash: "斬擊", claw: "爪擊", combo: "連擊", spin: "旋擊", slam: "重擊",
+    shockwave: "震波", pounce: "撲擊", sweep: "掃擊", sting: "刺擊", spit: "吐息"
+  };
+
+  function atkLabelFor(style) {
+    return ATK_LABELS[style] || "攻擊";
+  }
+
   function enemyMeleeFx(e, ang, phase, style) {
     style = style || e.atkStyle || "slash";
     var color = e.elite ? "#ffd166" : "#ffb15c";
     var hx = e.x + Math.cos(ang) * (e.r + 6);
     var hy = e.y - 8 + Math.sin(ang) * (e.r + 6);
     if (phase === "wind") {
-      if (style === "slam") {
-        pushCapped(G.fx, { type: "tell", x: hx, y: hy, r: e.r + 30, t: 0.3, max: 0.3, color: "#ff9b6a" }, MAX_FX);
+      if (style === "slam" || style === "shockwave") {
+        pushCapped(G.fx, { type: "tell", x: hx, y: hy, r: e.r + (style === "shockwave" ? 52 : 30), t: 0.3, max: 0.3, color: "#ff9b6a" }, MAX_FX);
       } else if (style === "spit") {
         pushCapped(G.fx, { type: "spark", x: e.x + Math.cos(ang) * 14, y: e.y - 26, r: 14, t: 0.28, max: 0.28, color: "#c9b3ff" }, MAX_FX);
+      } else if (style === "pounce") {
+        pushCapped(G.fx, { type: "tell", x: hx, y: hy, r: e.r + 24, t: 0.24, max: 0.24, color: "#ffd166" }, MAX_FX);
+        pushCapped(G.fx, { type: "dust", x: e.x, y: e.y + 2, r: e.r * 0.9, t: 0.26, max: 0.26, color: "#d8c39a" }, MAX_FX);
+      } else if (style === "sweep") {
+        pushCapped(G.fx, { type: "slash", x: hx, y: hy, r: e.r + 26, t: 0.22, max: 0.22, color: hexA(color, 0.9) }, MAX_FX);
       } else {
         pushCapped(G.fx, { type: "slash", x: hx, y: hy, r: e.r + 20, t: 0.2, max: 0.2, color: hexA(color, 0.85) }, MAX_FX);
       }
@@ -2483,6 +3620,23 @@
     if (style === "slam") {
       pushCapped(G.fx, { type: "ring", x: hx, y: hy + 6, r: 10, max: 66, t: 0.3, color: color }, MAX_FX);
       pushCapped(G.fx, { type: "dust", x: hx, y: hy + 8, r: 42, t: 0.35, max: 0.35, color: "#d8c39a" }, MAX_FX);
+    } else if (style === "shockwave") {
+      pushCapped(G.fx, { type: "ring", x: e.x, y: e.y, r: 16, max: e.r + 96, t: 0.42, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "dust", x: e.x, y: e.y + 4, r: e.r + 52, t: 0.4, max: 0.4, color: "#d8c39a" }, MAX_FX);
+      if (window.AUDIO) AUDIO.sfx("quake");
+    } else if (style === "pounce") {
+      pushCapped(G.fx, { type: "slash", x: hx, y: hy, r: e.r + 30, t: 0.18, color: "#ffe066" }, MAX_FX);
+      pushCapped(G.fx, { type: "spark", x: hx, y: hy, r: 16, t: 0.2, max: 0.2, color: "#ffd166" }, MAX_FX);
+    } else if (style === "sweep") {
+      for (var sw = -2; sw <= 2; sw++) {
+        pushCapped(G.fx, {
+          type: "slash", x: hx + Math.cos(ang + sw * 0.32) * 12, y: hy + Math.sin(ang + sw * 0.32) * 8,
+          r: e.r + 22, t: 0.18, color: sw === 0 ? "#fff0b8" : color
+        }, MAX_FX);
+      }
+    } else if (style === "spin") {
+      pushCapped(G.fx, { type: "ring", x: e.x, y: e.y - 8, r: 20, max: e.r + 58, t: 0.28, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "slash", x: e.x, y: e.y - 8, r: e.r + 34, t: 0.2, color: "#fff0b8" }, MAX_FX);
     } else if (style === "sting") {
       pushCapped(G.fx, { type: "slash", x: hx, y: hy, r: e.r + 24, t: 0.16, color: "#ffe066" }, MAX_FX);
     } else if (style === "claw") {
@@ -2501,7 +3655,11 @@
   function enemyAtkReach(e) {
     var style = e.atkStyle || "slash";
     if (style === "spit") return 270;
+    if (style === "shockwave") return 74;
+    if (style === "pounce") return 72;
+    if (style === "sweep") return 62;
     if (style === "slam") return 58;
+    if (style === "spin") return 54;
     if (style === "combo") return 50;
     if (style === "claw") return 48;
     if (style === "sting") return 44;
@@ -2514,9 +3672,26 @@
     var base = e.atk * (e.atkBuff || 1);
     var reach = enemyAtkReach(e);
     e.face = G.player.x >= e.x ? 1 : -1;
+    // 動作長度對齊素材的攻擊幀數，不再固定 0.48 秒把整段動作壓縮掉。
+    var atkAnim = (window.ART && ART.monsterAnimDuration) ? ART.monsterAnimDuration(e.mon, "attack") : 0;
+    var windDur = Math.max(0.46, Math.min(0.95, (atkAnim || 0.55) * 0.95));
     e.state = "attack";
-    e.stateT = style === "combo" ? 0.56 : 0.48;
+    e.stateT = style === "combo" ? windDur + 0.16 : windDur;
+    // 讓 sprite 的攻擊動畫剛好在起手時間內播完（最後一格＝命中瞬間）
+    e._animDur = e.stateT;
+    // 依動作風格決定演出方向：斬擊往前衝、撲擊跳起、重擊下沉、施法則後仰
+    e.swing = { t: 0, max: e.stateT, style: style, ang: ang };
     enemyMeleeFx(e, ang, "wind", style);
+    // 精英／霸主與特殊攻擊顯示招式名，讓小怪不再只有「碰一下」的單調感。
+    if (e.isBoss || e.elite || (style !== "slash" && Math.random() < 0.4)) {
+      pushCapped(G.floaters, {
+        x: e.x, y: e.y - (e.visH || 64) - 8,
+        text: atkLabelFor(style), t: 0.55,
+        color: e.isBoss ? e.bossColor : (e.elite ? "#ffd166" : "#ffcf9a"),
+        size: e.isBoss ? 12 : 10
+      }, MAX_FLOATERS);
+    }
+    if (window.AUDIO) AUDIO.sfx(style === "spit" ? "monster_cast" : (e.elite || e.isBoss ? "monster_attack_big" : "monster_attack"));
 
     if (style === "spit") {
       G.pendingHits.push({ e: e, t: 0.36, style: "spit", ang: ang, dmg: base * 0.9, range: 0 });
@@ -2531,6 +3706,26 @@
         });
       }
       e.atkCd = 1.8 + rand(0.25, 0.6);
+      return;
+    }
+    if (style === "spin") {
+      G.pendingHits.push({ e: e, t: 0.3, style: "spin", ang: ang, dmg: base * 1.15, range: reach + 26 });
+      e.atkCd = 2.6 + rand(0.4, 0.9);
+      return;
+    }
+    if (style === "shockwave") {
+      G.pendingHits.push({ e: e, t: 0.42, style: "shockwave", ang: ang, dmg: base * 1.3, range: reach + 58 });
+      e.atkCd = 2.8 + rand(0.5, 0.9);
+      return;
+    }
+    if (style === "pounce") {
+      G.pendingHits.push({ e: e, t: 0.3, style: "pounce", ang: ang, dmg: base * 1.2, range: reach + 26 });
+      e.atkCd = 2.0 + rand(0.3, 0.7);
+      return;
+    }
+    if (style === "sweep") {
+      G.pendingHits.push({ e: e, t: 0.26, style: "sweep", ang: ang, dmg: base * 1.05, range: reach + 30 });
+      e.atkCd = 1.9 + rand(0.3, 0.6);
       return;
     }
     var mult = style === "slam" ? 1.3 : (style === "sting" ? 0.95 : (style === "claw" ? 0.9 : 1));
@@ -2582,6 +3777,12 @@
         continue;
       }
 
+      // 霸主詠唱時定身，讓前搖與集氣條清楚可見
+      if (e.isBoss && e.bossCast) {
+        e.hitFlash = Math.max(0, e.hitFlash - dt);
+        continue;
+      }
+
       // 出生淡入與傳送門殘光
       if (e.spawnFade < 1) e.spawnFade = Math.min(1, e.spawnFade + dt * 3.6);
       if (e.spawnFxT > 0) e.spawnFxT -= dt;
@@ -2620,6 +3821,15 @@
         e.hp -= e.burnDps * dt;
         if (Math.random() < dt * 7) {
           pushCapped(G.fx, { type: "spark", x: e.x + rand(-8, 8), y: e.y - 16 + rand(-10, 10), r: 9, t: 0.22, max: 0.22, color: "#ff8a3d" }, MAX_FX);
+        }
+        if (e.hp <= 0) { killEnemy(e); continue; }
+      }
+      // 中毒持續傷害
+      if (e.venomT > 0) {
+        e.venomT -= dt;
+        e.hp -= e.venomDps * dt;
+        if (Math.random() < dt * 5) {
+          pushCapped(G.fx, { type: "spark", x: e.x + rand(-8, 8), y: e.y - 16 + rand(-10, 10), r: 8, t: 0.2, max: 0.2, color: "#8ee36a" }, MAX_FX);
         }
         if (e.hp <= 0) { killEnemy(e); continue; }
       }
@@ -2678,7 +3888,39 @@
         e.x = clamp(e.x + steer.vx * dt, e.r, G.worldW - e.r);
         e.y = clamp(e.y + steer.vy * dt, e.r, G.worldH - e.r);
         if (e.stateT <= 0) e.state = "walk";
+        // 走路時踢起地面塵土：配合素材的步行循環，讓「正在走」更明顯
+        e.stepT = (e.stepT || 0) - dt;
+        if (e.stepT <= 0) {
+          e.stepT = Math.max(0.18, 0.46 - (e.spd || 90) / 900);
+          if (d < 620) {
+            pushCapped(G.fx, {
+              type: "dust", x: e.x - (e.face || 1) * 4, y: e.y + 2,
+              r: e.r * (0.7 + Math.random() * 0.5), t: 0.3, max: 0.3,
+              color: e.isBoss ? "#e8c48a" : "#cfc3a8"
+            }, MAX_FX);
+            if (Math.random() < 0.22 && window.AUDIO) AUDIO.sfx("step");
+          }
+        }
       }
+      // 地形效果：水域拖慢、熔岩灼燒、虛空侵蝕，讓 15 關地圖不只是換顏色
+      e.terrainT = (e.terrainT || 0) - dt;
+      if (e.terrainT <= 0) {
+        e.terrainT = 0.28;
+        var ep = poolAt(e.x, e.y);
+        if (ep) {
+          if (ep.kind === "water" || ep.kind === "oasis") {
+            e.slowT = Math.max(e.slowT || 0, 0.5);
+            e.slowMul = Math.min(e.slowMul || 1, 0.72);
+          } else if (ep.kind === "lava") {
+            e.burnT = Math.max(e.burnT || 0, 1.6);
+            e.burnDps = Math.max(e.burnDps || 0, 1.4 + e.maxhp * 0.035);
+          } else if (ep.kind === "void") {
+            e.venomT = Math.max(e.venomT || 0, 1.6);
+            e.venomDps = Math.max(e.venomDps || 0, 1.2 + e.maxhp * 0.03);
+          }
+        }
+      }
+
       var atkReach = enemyAtkReach(e);
       if (d <= atkReach + p.r) {
         if (e.stateT <= 0) e.state = "idle";
@@ -2704,6 +3946,45 @@
           if (G.bossActive === e) G.bossActive = null;
         }
       }
+    }
+  }
+
+  // ---------------------------------------------------------------- 動作展示
+  // 只在 ?showcase=1 使用：讓每隻怪物依序播放六段動作，不做戰鬥判定。
+  var SHOWCASE_STATES = [
+    { state: "idle", dur: 1.5, label: "待機" },
+    { state: "walk", dur: 1.8, label: "行走" },
+    { state: "attack", dur: 0.62, label: "攻擊" },
+    { state: "special", dur: 1.05, label: "施法" },
+    { state: "hurt", dur: 0.5, label: "受傷" },
+    { state: "die", dur: 1.5, label: "死亡" }
+  ];
+
+  function updateShowcase(dt) {
+    G.showcaseT = (G.showcaseT || 0) + dt;
+    for (var i = 0; i < G.enemies.length; i++) {
+      var e = G.enemies[i];
+      e.spawnFade = 1;
+      e.showStateT = (e.showStateT || 0) - dt;
+      if (e.showStateT > 0) {
+        if (e.state === "attack" || e.state === "special" || e.state === "hurt") {
+          e.stateT = Math.max(0, e.stateT - dt);
+        }
+        if (e.state === "die") e.dieT = Math.max(0.36, (e.dieT || 1.4) - dt);
+        continue;
+      }
+      e.showIdx = ((e.showIdx || 0) + 1) % SHOWCASE_STATES.length;
+      var def = SHOWCASE_STATES[e.showIdx];
+      e.state = def.state;
+      e.stateT = def.state === "walk" ? 0 : def.dur;
+      e.showStateT = def.dur;
+      e.casting = def.state === "special" ? { sk: { Name: "元素魔法", Color: e.auraColor || "#b78bff" }, t: def.dur, max: def.dur } : null;
+      if (def.state === "die") e.dieT = Math.max(1.2, e.dieLen || 1.2);
+      else e.dieT = 0;
+      pushCapped(G.floaters, {
+        x: e.x, y: e.y - (e.visH || 64) - 10,
+        text: def.label, t: 0.7, color: "#ffe9a8", size: 11
+      }, MAX_FLOATERS);
     }
   }
 
@@ -2796,6 +4077,273 @@
     }
   }
 
+  // ---------------------------------------------------------------- 地圖互動物件
+  // 每一關在地圖上散佈可互動的寶箱／神龕／結晶／營火／圖騰。
+  // 走到旁邊就會自動觸發，給玩家「在地圖上探索」的理由，而不是只顧著繞圈打怪。
+  var INTERACT_TYPES = {
+    chest:    { name: "寶箱",     color: "#ffd166", prompt: "開啟寶箱",   sfx: "treasure" },
+    shrine:   { name: "祈願神龕", color: "#9fd8ff", prompt: "向神龕祈願", sfx: "shrine" },
+    crystal:  { name: "魔力結晶", color: "#b78bff", prompt: "汲取魔力",   sfx: "powerup" },
+    campfire: { name: "營火",     color: "#ff8a3d", prompt: "在營火休息", sfx: "campfire" },
+    totem:    { name: "戰魂圖騰", color: "#ff9bd2", prompt: "喚醒圖騰",   sfx: "totem" }
+  };
+
+  function interactTypeForLevel(lv) {
+    var t = String((lv && lv.Terrain) || "").toLowerCase();
+    if (/volcano|lava/.test(t)) return "chest";
+    if (/desert|sand/.test(t)) return "chest";
+    if (/deepforest|forest|jungle/.test(t)) return "campfire";
+    if (/graveyard|grave|tomb/.test(t)) return "totem";
+    if (/snow|ice/.test(t)) return "crystal";
+    if (/cave/.test(t)) return "crystal";
+    if (/underwater/.test(t)) return "crystal";
+    if (/coast|island/.test(t)) return "shrine";
+    var k = String((lv && lv.Gimmick && lv.Gimmick.Kind) || "");
+    if (/lava|sun|rockfall|sand/.test(k)) return "chest";
+    if (/spore|poison|vine|root/.test(k)) return "campfire";
+    if (/soul|moon/.test(k)) return "totem";
+    if (/ice|blizzard|wind|arcane/.test(k)) return "crystal";
+    return "shrine";
+  }
+
+  function safeInteractSpot(x, y) {
+    var tries = 0;
+    while (tries++ < 14) {
+      var pool = poolAt(x, y);
+      var bad = pool && (pool.kind === "water" || pool.kind === "lava" || pool.kind === "void" || pool.kind === "oasis");
+      if (!bad && x > 70 && x < G.worldW - 70 && y > 90 && y < G.worldH - 70) return { x: x, y: y };
+      x = clamp(x + rand(-150, 150), 70, G.worldW - 70);
+      y = clamp(y + rand(-130, 130), 90, G.worldH - 90);
+    }
+    return { x: clamp(x, 70, G.worldW - 70), y: clamp(y, 90, G.worldH - 90) };
+  }
+
+  function spawnInteractable(type, x, y) {
+    if (!G.interactables) G.interactables = [];
+    var def = INTERACT_TYPES[type] || INTERACT_TYPES.chest;
+    var pos = safeInteractSpot(x, y);
+    var it = {
+      type: type, def: def, x: pos.x, y: pos.y,
+      r: 26, t: rand(0, 8), used: false, fade: 0, near: false
+    };
+    G.interactables.push(it);
+    pushCapped(G.fx, { type: "ring", x: it.x, y: it.y - 4, r: 10, max: 58, t: 0.55, color: def.color }, MAX_FX);
+    return it;
+  }
+
+  function buildInteractables(lv) {
+    G.interactables = [];
+    var main = interactTypeForLevel(lv || G.level);
+    var types = [main, "chest", "shrine", main === "crystal" ? "campfire" : "crystal"];
+    for (var i = 0; i < 4; i++) {
+      var a = (i / 4) * Math.PI * 2 + rand(-0.38, 0.38);
+      var rad = rand(210, 430);
+      spawnInteractable(types[i % types.length], G.player.x + Math.cos(a) * rad, G.player.y + Math.sin(a) * rad);
+    }
+    G.interactSpawnT = rand(18, 28);
+  }
+
+  function activateInteractable(it) {
+    if (it.used) return;
+    var p = G.player;
+    var def = it.def;
+    it.used = true;
+    it.fade = 0;
+    var col = def.color;
+    pushCapped(G.fx, { type: "ring", x: it.x, y: it.y - 8, r: 14, max: 140, t: 0.6, color: col }, MAX_FX);
+    pushCapped(G.fx, { type: "spark", x: it.x, y: it.y - 18, r: 34, t: 0.42, max: 0.42, color: col }, MAX_FX);
+    pushCapped(G.fx, { type: "flash", x: it.x, y: it.y, t: 0.24, max: 0.24, color: col }, MAX_FX);
+
+    var msg = "";
+    if (it.type === "chest") {
+      var val = Math.max(6, p.nextExp * 0.3);
+      for (var oi = 0; oi < 10; oi++) {
+        G.orbs.push({ x: it.x + rand(-22, 22), y: it.y + rand(-18, 18), v: val / 10, r: 6 });
+      }
+      p.hp = Math.min(p.maxhp, p.hp + p.maxhp * 0.12);
+      p.mp = Math.min(p.maxmp, p.mp + p.maxmp * 0.3);
+      p.ult = Math.min(p.ultMax, p.ult + 20);
+      msg = "寶箱開啟：經驗、生命與終極充能！";
+    } else if (it.type === "shrine") {
+      p.hp = Math.min(p.maxhp, p.hp + p.maxhp * 0.4);
+      p.shield = Math.max(p.shield, p.maxhp * 0.2);
+      p.shieldT = Math.max(p.shieldT || 0, 8);
+      for (var s = 0; s < p.spells.length; s++) p.spells[s].cd = 0;
+      msg = "神龕回應：生命大幅回復、護盾展開、魔法冷卻歸零！";
+    } else if (it.type === "crystal") {
+      p.spellPower *= 1.07;
+      p.maxmp *= 1.06;
+      p.mp = p.maxmp;
+      p.mpRegen *= 1.06;
+      msg = "魔力結晶：魔法傷害 +7%、最大魔力 +6%！";
+    } else if (it.type === "campfire") {
+      p.hp = Math.min(p.maxhp, p.hp + p.maxhp * 0.28);
+      p.mp = Math.min(p.maxmp, p.mp + p.maxmp * 0.4);
+      p.hpRegen += 0.45;
+      p.regenT = 6;
+      p.regen = p.maxhp * 0.02;
+      msg = "營火休息：生命與魔力回復，生命回復 +0.45／秒！";
+    } else if (it.type === "totem") {
+      var hit = 0;
+      for (var i = G.enemies.length - 1; i >= 0; i--) {
+        var e = G.enemies[i];
+        if (e.dying) continue;
+        if (dist2(e, it) < 460 * 460) {
+          dealDamage(e, p.atk * 2.4, { noCrit: true });
+          e.stunT = Math.max(e.stunT || 0, 0.7);
+          hit++;
+        }
+      }
+      pushCapped(G.shockwaves, { x: it.x, y: it.y, r: 20, max: 470, t: 0.5, maxT: 0.5, dmg: 0, color: col, hit: true }, 20);
+      pushCapped(G.fx, { type: "lightning", x: it.x, y: it.y - 10, r: 80, t: 0.5, max: 0.5, color: col }, MAX_FX);
+      msg = "戰魂圖騰：震懾 " + hit + " 名敵人！";
+    }
+
+    pushCapped(G.floaters, { x: it.x, y: it.y - 78, text: def.name + "！", t: 1.1, color: col, size: 14 }, MAX_FLOATERS);
+    toast(msg);
+    if (window.AUDIO) {
+      if (def.sfx) AUDIO.sfx(def.sfx);
+      AUDIO.sfx("levelup2");
+    }
+  }
+
+  function updateInteractables(dt) {
+    if (!G.interactables) G.interactables = [];
+    var p = G.player;
+    for (var i = G.interactables.length - 1; i >= 0; i--) {
+      var it = G.interactables[i];
+      it.t += dt;
+      if (it.used) {
+        it.fade += dt;
+        if (it.fade > 0.9) G.interactables.splice(i, 1);
+        continue;
+      }
+      var d = Math.hypot(it.x - p.x, it.y - p.y);
+      it.near = d < 150;
+      if (d < p.r + it.r) activateInteractable(it);
+    }
+    // 戰鬥中定期補充新的互動物件，讓地圖一直有東西可以追
+    var active = 0;
+    for (var ai = 0; ai < G.interactables.length; ai++) if (!G.interactables[ai].used) active++;
+    if (active < 3 && G.roundActive) {
+      G.interactSpawnT = num(G.interactSpawnT, 20) - dt;
+      if (G.interactSpawnT <= 0) {
+        G.interactSpawnT = rand(17, 28);
+        var main = interactTypeForLevel(G.level);
+        var pool = ["chest", "shrine", "crystal", "campfire", "totem", main];
+        var a = Math.random() * Math.PI * 2;
+        var rad = rand(280, 470);
+        spawnInteractable(pool[Math.floor(Math.random() * pool.length)],
+          p.x + Math.cos(a) * rad, p.y + Math.sin(a) * rad);
+        pushCapped(G.floaters, { x: p.x, y: p.y - 62, text: "附近出現了互動物件！", t: 1.2, color: "#ffe9a8", size: 12 }, MAX_FLOATERS);
+        if (window.AUDIO) AUDIO.sfx("portal");
+      }
+    }
+  }
+
+  function drawInteractable(it, sx, sy) {
+    if (!it || !it.def) return;
+    var t = G.time + it.t;
+    var col = it.def.color;
+    var pulse = 0.5 + 0.5 * Math.sin(t * 2.6);
+    ctx.save();
+    if (it.used) ctx.globalAlpha = Math.max(0, 1 - it.fade / 0.9);
+    // 地面光暈與提示圈
+    var glow = ctx.createRadialGradient(sx, sy - 4, 2, sx, sy - 4, 56);
+    glow.addColorStop(0, hexA(col, 0.34 + pulse * 0.15));
+    glow.addColorStop(1, hexA(col, 0));
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.ellipse(sx, sy - 2, 54, 26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = hexA(col, 0.45 + pulse * 0.3);
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(sx, sy - 2, 28 + pulse * 6, 12 + pulse * 3, 0, 0, Math.PI * 2); ctx.stroke();
+
+    if (it.type === "shrine" || it.type === "crystal") {
+      if (window.ART && ART.drawProp) {
+        ART.drawProp(ctx, {
+          type: "landmark",
+          kind: it.type === "shrine" ? "shrine" : "crystal",
+          tint: col, scale: 0.72, flip: false
+        }, sx, sy);
+      }
+    } else if (it.type === "chest") {
+      ctx.translate(sx, sy);
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.beginPath(); ctx.ellipse(0, 2, 22, 7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#6b3f1f";
+      ctx.fillRect(-19, -20, 38, 21);
+      ctx.fillStyle = "#8e5a2e";
+      ctx.fillRect(-19, -20, 38, 7);
+      ctx.fillStyle = "#c9a227";
+      ctx.fillRect(-19, -21, 38, 3);
+      ctx.fillRect(-3, -21, 6, 22);
+      ctx.fillStyle = "#ffe066";
+      ctx.fillRect(-4, -13, 8, 6);
+      ctx.fillStyle = "rgba(255,240,180,0.28)";
+      ctx.fillRect(-19, -20, 38, 3);
+      ctx.strokeStyle = "#3d2411";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(-19, -20, 38, 21);
+      ctx.restore();
+      ctx.save();
+      if (it.used) ctx.globalAlpha = Math.max(0, 1 - it.fade / 0.9);
+    } else if (it.type === "campfire") {
+      ctx.translate(sx, sy);
+      ctx.strokeStyle = "#6b4a2a";
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(-15, -2); ctx.lineTo(13, -12); ctx.moveTo(-13, -12); ctx.lineTo(15, -2); ctx.stroke();
+      var fh = 30 + pulse * 10;
+      var fg = ctx.createRadialGradient(0, -8, 2, 0, -8, fh);
+      fg.addColorStop(0, "rgba(255,246,200,0.95)");
+      fg.addColorStop(0.45, "rgba(255,150,50,0.85)");
+      fg.addColorStop(1, "rgba(255,80,20,0)");
+      ctx.fillStyle = fg;
+      ctx.beginPath();
+      ctx.moveTo(0, -fh - 8);
+      ctx.quadraticCurveTo(18, -18, 0, -4);
+      ctx.quadraticCurveTo(-18, -18, 0, -fh - 8);
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      if (it.used) ctx.globalAlpha = Math.max(0, 1 - it.fade / 0.9);
+    } else if (it.type === "totem") {
+      ctx.translate(sx, sy);
+      ctx.fillStyle = "#5d5570";
+      ctx.beginPath(); ctx.ellipse(0, -2, 24, 9, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#7b7294";
+      ctx.fillRect(-17, -14, 34, 13);
+      ctx.fillStyle = "#6a6285";
+      ctx.fillRect(-12, -27, 24, 14);
+      ctx.fillStyle = "#8a80a8";
+      ctx.fillRect(-8, -39, 16, 13);
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(0, -33, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = hexA(col, 0.7);
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-18, -52); ctx.lineTo(0, -42); ctx.lineTo(18, -52); ctx.stroke();
+      ctx.restore();
+      ctx.save();
+      if (it.used) ctx.globalAlpha = Math.max(0, 1 - it.fade / 0.9);
+    }
+
+    // 名稱與互動提示
+    ctx.font = "bold 11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.72)";
+    ctx.fillStyle = col;
+    ctx.strokeText(it.def.name, sx, sy - 74);
+    ctx.fillText(it.def.name, sx, sy - 74);
+    if (it.near && !it.used) {
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillStyle = "#fff6d8";
+      var bob = Math.sin(t * 5) * 2;
+      ctx.strokeText(it.def.prompt, sx, sy - 58 + bob);
+      ctx.fillText(it.def.prompt, sx, sy - 58 + bob);
+    }
+    ctx.restore();
+  }
+
   function countAliveEnemies() {
     var alive = 0, bossAlive = 0, bossDying = 0;
     for (var i = 0; i < G.enemies.length; i++) {
@@ -2830,6 +4378,7 @@
 
   function updateWaves(dt) {
     if (G.over) return;
+    var p = G.player;
     var rd = (G.level.RoundInfos || [])[G.roundIndex];
     if (!rd) return;
 
@@ -2848,17 +4397,40 @@
     var bosses = rd.BossInfos || [];
     var infinite = num(rd.Duration, 0) < 0;
     var difficulty = num(G.level.Difficulty, 1);
-    // 場上同時存活上限：避免一次把整波倒出來，讓戰鬥節奏保持連續
-    var fieldMax = bosses.length ? 18 : Math.min(MAX_ENEMIES - 2, 8 + Math.floor(difficulty * 1.15));
+    var bossRound = bosses.length > 0;
+    // 霸主還活著時才持續補小怪；霸主倒下後停止增援，讓玩家把殘兵清完。
+    var liveBossNow = false;
+    for (var lb = 0; lb < G.bosses.length; lb++) {
+      if (G.bosses[lb] && !G.bosses[lb].dying) { liveBossNow = true; break; }
+    }
+
+    // 場上同時存活上限：避免一次把整波倒出來，讓戰鬥節奏保持連續。
+    // 上限提高後，清掉一批就會立刻補上，畫面不會空掉。
+    var fieldMax = bossRound
+      ? Math.min(MAX_ENEMIES - 2, 26 + Math.floor(difficulty * 1.5))
+      : Math.min(MAX_ENEMIES - 2, 30 + Math.floor(difficulty * 2.4));
 
     // 先處理這一波原有的生成佇列（場上還有空間才繼續出）
     var fieldNow = countAliveEnemies();
     var fieldUsed = fieldNow.alive + fieldNow.bossAlive;
+
+    // 擊殺增援：每殺一隻就排一位，這裡立刻補進場，清場後不會出現空窗。
+    if (G.reinforcePending > 0 && fieldUsed < fieldMax) {
+      var rinPool = roundEnemyPool(rd);
+      while (G.reinforcePending > 0 && fieldUsed < fieldMax && rinPool.length) {
+        var rinId = rinPool[Math.floor(Math.random() * rinPool.length)];
+        var rinElite = difficulty >= 5 && Math.random() < 0.02 + difficulty * 0.003;
+        if (!spawnEnemy(rinId, num(rd.Level, 1), false, "", null, rinElite)) break;
+        G.reinforcePending--;
+        fieldUsed++;
+      }
+      if (G.reinforcePending > 0 && fieldUsed >= fieldMax) G.reinforcePending = 0;
+    }
     if (G.spawnQueue.length && fieldUsed < fieldMax) {
       G.spawnTimer -= dt;
       if (G.spawnTimer <= 0) {
-        G.spawnTimer = Math.max(0.16, 0.3 - difficulty * 0.008);
-        var batch = 1 + Math.floor(difficulty / 7);
+        G.spawnTimer = Math.max(0.12, 0.26 - difficulty * 0.008);
+        var batch = 1 + Math.floor(difficulty / 6);
         for (var bi = 0; bi < batch && G.spawnQueue.length && fieldUsed < fieldMax; bi++) {
           var s = G.spawnQueue[0];
           var spawned = spawnEnemy(s.enemyId, s.level, false, "", null, !!s.elite);
@@ -2869,38 +4441,67 @@
       }
     }
 
-    // 霸主波不再無限補怪；普通波在時間結束前會持續補充，讓怪物「死掉就繼續出」
-    var canTrickle = bosses.length === 0 && (infinite || G.roundTimer > 2.2);
+    // 普通波在時間結束前會持續補充；霸主波只在霸主存活時補怪。
+    // 怪物死掉就立刻從本關怪物池補位，不會清空後站著等下一波。
+    var canTrickle = bossRound ? liveBossNow : (G.roundTimer > 0.25);
 
     if (canTrickle) {
       var state = countAliveEnemies();
-      var targetAlive = Math.min(fieldMax - 2, 5 + Math.floor(difficulty * 0.75) + (difficulty >= 10 ? 2 : 0));
+      var targetAlive = bossRound
+        ? Math.min(fieldMax - 6, 11 + Math.floor(difficulty * 1.4) + loopCount * 2)
+        : Math.min(fieldMax - 2, 19 + Math.floor(difficulty * 2.1) + loopCount * 3);
       var supply = state.alive + G.spawnQueue.length;
       if (supply < targetAlive) {
         G.trickleT -= dt;
         if (G.trickleT <= 0) {
           var pool = roundEnemyPool(rd);
-          var spawnN = Math.min(targetAlive - supply, 1 + Math.floor(Math.random() * 2) + (difficulty >= 10 ? 1 : 0));
+          var spawnN = Math.min(targetAlive - supply, 1 + Math.floor(Math.random() * 2) + (difficulty >= 8 ? 1 : 0));
           for (var ti = 0; ti < spawnN; ti++) {
             if (!pool.length) break;
             var tid = pool[Math.floor(Math.random() * pool.length)];
-            var isElite = difficulty >= 6 && Math.random() < 0.03 + difficulty * 0.003;
+            var isElite = difficulty >= 4 && Math.random() < 0.035 + difficulty * 0.004;
             var tlv = num(rd.Level, 1) + (Math.random() < 0.18 ? 1 : 0);
             if (!spawnEnemy(tid, tlv, false, "", null, isElite)) break;
           }
-          G.trickleT = Math.max(0.32, 1.45 - difficulty * 0.055) * rand(0.8, 1.2);
+          G.trickleT = Math.max(0.14, (bossRound ? 1.15 : 0.55) - difficulty * 0.025) * rand(0.72, 1.1);
         }
       } else {
-        G.trickleT = Math.max(G.trickleT, 0.4);
+        G.trickleT = Math.max(G.trickleT, 0.25);
+      }
+
+      // 怪群來襲：每隔一段時間在玩家四周一次衝出一小群，讓畫面有明顯的節奏起伏
+      G.packT = num(G.packT, 9) - dt;
+      if (G.packT <= 0) {
+        var packPool = roundEnemyPool(rd);
+        var packSize = Math.min(fieldMax - supply, 3 + Math.floor(difficulty / 3) + Math.floor(Math.random() * 3));
+        if (packPool.length && packSize > 0) {
+          var baseAng = Math.random() * Math.PI * 2;
+          var packId = packPool[Math.floor(Math.random() * packPool.length)];
+          for (var pi = 0; pi < packSize; pi++) {
+            var pa2 = baseAng + (pi / packSize) * Math.PI * 2 * 0.7;
+            var pr2 = rand(240, 360);
+            var pe = spawnEnemy(packId, num(rd.Level, 1), false, "", null, false);
+            if (!pe) break;
+            pe.x = clamp(p.x + Math.cos(pa2) * pr2, 40, G.worldW - 40);
+            pe.y = clamp(p.y + Math.sin(pa2) * pr2, 40, G.worldH - 40);
+            pushCapped(G.fx, { type: "portal", x: pe.x, y: pe.y, r: pe.r + 10, t: 0.55, max: 0.55, color: pe.auraColor || "#b78bff" }, MAX_FX);
+          }
+          if (window.AUDIO) AUDIO.sfx("portal");
+          // 從玩家四周出現時補一句提示，讓「怪物源源不絕」的感覺更明確
+          pushCapped(G.floaters, { x: p.x, y: p.y - 60, text: "怪物湧現！", t: 1.0, color: "#ffd166", size: 14 }, MAX_FLOATERS);
+        }
+        G.packT = rand(8, 14) - Math.min(5, difficulty * 0.32);
       }
     }
 
-    // 沒有待生成怪物、場上也全清空 → 立刻下一波
     var now = countAliveEnemies();
-    if (!G.spawnQueue.length && now.alive === 0 && now.bossAlive === 0 && now.bossDying === 0) {
-      G.roundActive = false;
-      G.roundWait = false;
-      nextRound();
+    if (bossRound) {
+      // 霸主波：霸主與殘兵全部清空就進下一關（不會因為一直補兵而卡死）
+      if (!G.spawnQueue.length && now.bossAlive === 0 && now.bossDying === 0 && now.alive === 0) {
+        G.roundActive = false;
+        G.roundWait = false;
+        nextRound();
+      }
       return;
     }
 
@@ -2912,7 +4513,7 @@
       G.roundActive = false;
       // 時間到後不再保留未生成的增援，避免殘留佇列造成卡關
       G.spawnQueue.length = 0;
-      if (!G.spawnQueue.length && now.alive === 0 && now.bossAlive === 0) nextRound();
+      if (now.alive === 0) nextRound();
       else G.roundWait = true;
     }
   }
@@ -2921,6 +4522,11 @@
     if (G.over) return;
     G.over = true;
     G.victory = victory;
+    if (window.AUDIO) {
+      AUDIO.stopBgm(1500);
+      if (AUDIO.stopAmbient) AUDIO.stopAmbient(1200);
+      if (victory) AUDIO.sfx("victory");
+    }
 
     var titleEl = document.getElementById("gameOverTitle");
     var statsEl = document.getElementById("gameOverStats");
@@ -3007,6 +4613,7 @@
     if (title) title.textContent = info.Title || "";
     if (lore) lore.textContent = info.Mechanic && info.Mechanic.length ? "招式：" + info.Mechanic.map(abilityName).join(" · ") : "";
     el.classList.remove("hidden");
+    if (window.AUDIO) AUDIO.sfx("boss");
     el.style.animation = "none";
     void el.offsetWidth;
     el.style.animation = "";
@@ -3057,6 +4664,16 @@
       items.push({ d: e.y, kind: 1, o: e, sx: s.x, sy: s.y });
     }
 
+    if (G.interactables) {
+      for (i = 0; i < G.interactables.length; i++) {
+        var iv = G.interactables[i];
+        if (iv.x < G.cam.x - W / 2 - 120 || iv.x > G.cam.x + W / 2 + 120) continue;
+        if (iv.y < G.cam.y - H / 2 - 120 || iv.y > G.cam.y + H / 2 + 120) continue;
+        s = toScreen(iv.x, iv.y);
+        items.push({ d: iv.y, kind: 3, o: iv, sx: s.x, sy: s.y });
+      }
+    }
+
     s = toScreen(p.x, p.y);
     items.push({ d: p.y, kind: 2, o: p, sx: s.x, sy: s.y });
 
@@ -3068,6 +4685,8 @@
         ART.drawProp(ctx, it.o, it.sx, it.sy);
       } else if (it.kind === 1) {
         drawOneEnemy(it.o, it.sx, it.sy);
+      } else if (it.kind === 3) {
+        drawInteractable(it.o, it.sx, it.sy);
       } else {
         drawOnePlayer(it.o, it.sx, it.sy);
       }
@@ -3075,6 +4694,15 @@
   }
 
   function drawOnePlayer(p, sx, sy) {
+    // 玩家腳下的金色圓環：怪物一多時也能立刻找到自己
+    ctx.save();
+    ctx.globalAlpha = 0.75 + 0.15 * Math.sin(G.time * 3.2);
+    ctx.strokeStyle = p.hp / p.maxhp < 0.3 ? "#ff8a7a" : "#ffe28a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy - 2, 27, 11, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
     ART.drawPlayer(ctx, p, sx, sy, G.time);
 
     var sc = p.artScale || 1.15;
@@ -3096,7 +4724,9 @@
   }
 
   function drawOneEnemy(e, sx, sy) {
-    var scaleMul = e.isBoss ? 1.35 : (e.elite ? 1.18 : 1);
+    // 怪物尺寸主要由 art.js 依素材高度換算，這裡只保留很小的精英／霸主加成，
+    // 避免放大兩次造成巨獸遮住整個畫面。
+    var scaleMul = e.isBoss ? 1.0 : (e.elite ? 1.06 : 1);
     if (e.isBoss || e.elite) {
       var auraColor = e.isBoss ? e.bossColor : "#ffd166";
       var aura = e.isBoss
@@ -3120,6 +4750,20 @@
       ctx.beginPath();
       ctx.ellipse(sx, sy - (e.visH || 50) * 0.45, e.r * 1.9, (e.visH || 50) * 0.62, 0, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.restore();
+    }
+
+    // 元素光環：每隻小怪腳下都有對應屬性的微光，讓招式顏色與怪物一致
+    if (!e.isBoss && e.auraColor && !e.dying) {
+      var au = 0.10 + 0.05 * Math.sin(G.time * 3.6 + e.x * 0.03);
+      var ag2 = ctx.createRadialGradient(sx, sy - 4, 2, sx, sy - 4, e.r * 2.6);
+      ag2.addColorStop(0, hexA(e.auraColor, au * 1.5));
+      ag2.addColorStop(1, hexA(e.auraColor, 0));
+      ctx.save();
+      ctx.fillStyle = ag2;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy - 2, e.r * 2.6, e.r * 1.15, 0, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
 
@@ -3169,6 +4813,26 @@
       ctx.fillRect(sx - w / 2, barY - 7, w * cp, 3);
     }
 
+    // 霸主技能前搖：血條下方顯示招式名稱與集氣進度
+    if (e.bossCast) {
+      var bcp = 1 - clamp(e.bossCast.t / e.bossCast.max, 0, 1);
+      var bcw = Math.max(w, 110);
+      var bcy = barY + 8;
+      ctx.fillStyle = "rgba(0,0,0,0.68)";
+      ctx.fillRect(sx - bcw / 2, bcy, bcw, 6);
+      ctx.fillStyle = e.bossCast.color || e.bossColor;
+      ctx.fillRect(sx - bcw / 2, bcy, bcw * bcp, 6);
+      ctx.save();
+      ctx.font = "bold 11px sans-serif";
+      ctx.textAlign = "center";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.75)";
+      ctx.fillStyle = "#fff4d8";
+      ctx.strokeText("詠唱 · " + e.bossCast.name, sx, bcy + 20);
+      ctx.fillText("詠唱 · " + e.bossCast.name, sx, bcy + 20);
+      ctx.restore();
+    }
+
     if (e.isBoss) {
       ctx.font = "12px sans-serif";
       ctx.textAlign = "center";
@@ -3179,6 +4843,24 @@
       ctx.textAlign = "center";
       ctx.fillStyle = "#ffd166";
       ctx.fillText("精英", sx, barY - 6);
+    }
+
+    // 出手時在頭頂標示招式名稱：即使怪物很小、動作很快，也能看出牠正在攻擊
+    if (!e.dying && e.state === "attack" && !e.isBoss) {
+      var pd = Math.hypot(e.x - G.player.x, e.y - G.player.y);
+      if (pd < 400) {
+        var labelY = barY - 8 - (e.elite ? 12 : 0);
+        ctx.save();
+        ctx.font = "bold 10px sans-serif";
+        ctx.textAlign = "center";
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(0,0,0,0.72)";
+        ctx.fillStyle = e.elite ? "#ffe066" : "#ffd9a8";
+        var atxt = atkLabelFor(e.atkStyle);
+        ctx.strokeText(atxt, sx, labelY);
+        ctx.fillText(atxt, sx, labelY);
+        ctx.restore();
+      }
     }
   }
 
@@ -3293,14 +4975,32 @@
     for (var i = 0; i < G.bullets.length; i++) {
       var b = G.bullets[i];
       var s = toScreen(b.x, b.y);
+      var bv = Math.hypot(b.vx || 0, b.vy || 0) || 1;
+      var tx = (b.vx || 0) / bv, ty = (b.vy || 0) / bv;
       ctx.save();
+      // 拖尾：讓小怪的技能彈看得出來從哪裡射向哪裡
+      var tg = ctx.createLinearGradient(s.x - tx * b.r * 6, s.y - ty * b.r * 6, s.x, s.y);
+      tg.addColorStop(0, hexA(b.color, 0));
+      tg.addColorStop(1, hexA(b.color, 0.65));
+      ctx.strokeStyle = tg;
+      ctx.lineWidth = b.r * 1.15;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(s.x - tx * b.r * 6, s.y - ty * b.r * 6);
+      ctx.lineTo(s.x, s.y);
+      ctx.stroke();
       ctx.shadowColor = b.color;
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 16;
       ctx.fillStyle = b.color;
       ctx.beginPath(); ctx.arc(s.x, s.y, b.r, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.beginPath(); ctx.arc(s.x - b.vx * 0.004, s.y - b.vy * 0.004, b.r * 0.42, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.beginPath(); ctx.arc(s.x - tx * b.r * 0.3, s.y - ty * b.r * 0.3, b.r * 0.42, 0, Math.PI * 2); ctx.fill();
+      // 脈動外圈，元素辨識度更高
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(G.time * 14 + i);
+      ctx.strokeStyle = b.color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(s.x, s.y, b.r * 1.7, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
   }
@@ -3458,7 +5158,15 @@
       if (f.t <= 0) { G.fx.splice(i, 1); continue; }
       var spf = toScreen(f.x, f.y);
       var sx = spf.x, sy = spf.y;
-      if (f.type === "ring") {
+      if (f.type === "flash") {
+        var fk = clamp(f.t / (f.max || 0.55), 0, 1);
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = fk * 0.55;
+        ctx.fillStyle = f.color || "#ffffff";
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      } else if (f.type === "ring") {
         if (!f.dur) f.dur = Math.max(0.2, f.t);
         var k = 1 - f.t / f.dur;
         ctx.beginPath();
@@ -3484,6 +5192,23 @@
           ctx.lineTo(sx + Math.cos(ca) * (f.r || 20) * 1.05, sy + Math.sin(ca) * (f.r || 20) * 1.05);
           ctx.stroke();
         }
+        ctx.restore();
+      } else if (f.type === "beam") {
+        var bkt = 1 - clamp(f.t / (f.max || 0.34), 0, 1);
+        var bEnd = f.tx !== undefined ? toScreen(f.tx, f.ty) : { x: sx + 200, y: sy };
+        ctx.save();
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.34), 0, 1);
+        ctx.strokeStyle = f.color;
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 24;
+        ctx.lineCap = "round";
+        ctx.lineWidth = (f.r || 24) * (1.2 - bkt * 0.45);
+        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(bEnd.x, bEnd.y); ctx.stroke();
+        ctx.globalAlpha *= 0.9;
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.shadowBlur = 8;
+        ctx.lineWidth = Math.max(2, (f.r || 24) * 0.28);
+        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(bEnd.x, bEnd.y); ctx.stroke();
         ctx.restore();
       } else if (f.type === "chain" && f.pts && f.pts.length > 1) {
         ctx.save();
@@ -3727,8 +5452,12 @@
       var sp2 = toScreen(t.x, t.y);
       var fx = sp2.x, fy = sp2.y;
       ctx.globalAlpha = clamp(t.t / 0.7, 0, 1);
-      ctx.font = "bold 13px sans-serif";
+      var fsize = t.size || 13;
+      ctx.font = "bold " + fsize + "px sans-serif";
       ctx.textAlign = "center";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.7)";
+      ctx.strokeText(t.text, fx, fy);
       ctx.fillStyle = t.color;
       ctx.fillText(t.text, fx, fy);
       ctx.globalAlpha = 1;
@@ -3771,6 +5500,14 @@
     if (mpFill) mpFill.style.width = mpPct + "%";
     var mpText = document.getElementById("mpText");
     if (mpText) mpText.textContent = Math.floor(p.mp) + "/" + Math.ceil(p.maxmp);
+
+    var ultPct = clamp((p.ult || 0) / (p.ultMax || 100), 0, 1) * 100;
+    var ultFill = document.getElementById("ultFill");
+    if (ultFill) ultFill.style.width = ultPct + "%";
+    var ultText = document.getElementById("ultText");
+    if (ultText) ultText.textContent = ultPct >= 100 ? "R · 就緒！" : Math.floor(ultPct) + "%";
+    var ultBar = document.getElementById("ultBar");
+    if (ultBar) ultBar.classList.toggle("ready", ultPct >= 100);
 
     var expPct = clamp(p.exp / p.nextExp, 0, 1) * 100;
     document.getElementById("expFill").style.width = expPct + "%";
@@ -3900,7 +5637,14 @@
           G.paused = false;
         }
       }
-      if (!G.paused && !G.over) {
+      if (G.showcase) {
+        // 美術展示模式：只推進動畫與時間，不跑戰鬥，讓每隻怪物輪播六種動作。
+        G.time += dt;
+        updateShowcase(dt);
+        var showHalfW = W / 2, showHalfH = H / 2;
+        G.cam.x = G.worldW > W ? clamp(G.player.x, showHalfW, G.worldW - showHalfW) : G.worldW / 2;
+        G.cam.y = G.worldH > H ? clamp(G.player.y, showHalfH, G.worldH - showHalfH) : G.worldH / 2;
+      } else if (!G.paused && !G.over) {
         G.time += dt;
         updatePlayer(dt);
         playerAttack(dt);
@@ -3911,6 +5655,7 @@
         updatePendingHits(dt);
         updateHazards(dt);
         updateGimmick(dt);
+        updateInteractables(dt);
         updateWaves(dt);
 
         // camera lerp（俯視角，鏡頭不超出地圖）
@@ -3949,13 +5694,18 @@
     var k = e.key.toLowerCase();
     keys[k] = true;
     if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].indexOf(k) >= 0) e.preventDefault();
-    // 數字鍵 1~4：手動詠唱魔法
+    // 數字鍵 1~9：手動詠唱魔法
     if (G && !G.paused && !G.over && /^[1-9]$/.test(k)) {
       var idx = Number(k) - 1;
       if (G.player.spells && idx < G.player.spells.length) {
         castSpell(idx, true);
         e.preventDefault();
       }
+    }
+    // R：終極技能
+    if (k === "r" && G && !G.paused && !G.over) {
+      castUltimate(true);
+      e.preventDefault();
     }
   });
   document.addEventListener("keyup", function (e) { keys[e.key.toLowerCase()] = false; });
@@ -3972,6 +5722,35 @@
   canvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 
   // ---------------------------------------------------------------- buttons
+  // 依關卡選擇 BGM：每 5 關換一次氣氛，霸主波另外切戰鬥曲
+  function levelBgm(li) {
+    li = num(li, 0);
+    if (li >= 10) return "field3";
+    if (li >= 5) return "field2";
+    return "field1";
+  }
+
+  // 依地區機制／地形挑選環境音，讓每一關的「空氣」不同。
+  function ambientForLevel(lv) {
+    var t = String((lv && lv.Terrain) || "").toLowerCase();
+    var k = String((lv && lv.Gimmick && lv.Gimmick.Kind) || "").toLowerCase();
+    if (/underwater/.test(t)) return "underwater";
+    if (/volcano|lava/.test(t)) return "volcano";
+    if (/snow|ice/.test(t)) return "snow";
+    if (/desert|sand/.test(t)) return "desert";
+    if (/deepforest|forest|jungle/.test(t)) return "forest";
+    if (/graveyard|grave|tomb/.test(t)) return "graveyard";
+    if (/cave/.test(t)) return "cave";
+    if (/coast|island/.test(t)) return "island";
+    if (/lava|sun|rockfall/.test(k)) return "volcano";
+    if (/blizzard|ice/.test(k)) return "snow";
+    if (/sand|wind/.test(k)) return "desert";
+    if (/spore|vine|root/.test(k)) return "forest";
+    if (/soul|moon/.test(k)) return "graveyard";
+    if (/arcane|beam/.test(k)) return "cave";
+    return "island";
+  }
+
   // 等原版美術與該關卡的怪物圖載入完成再開場
   function startGame() {
     if (!CONFIG.Players || !CONFIG.Players.length || !CONFIG.Levels || !CONFIG.Levels.length) return;
@@ -3981,33 +5760,54 @@
     var ids = lv.MonsterIDs || [];
     var note = document.getElementById("loadNote");
 
+    // 先起音樂，不必等怪物圖載完（第一次互動前會先排隊，等手勢解鎖）
+    if (window.AUDIO) AUDIO.playBgm(levelBgm(li));
+
     function go() {
       if (note) note.textContent = "";
       startBtn.disabled = false;
       newGame();
     }
 
+    // 開場先載入「第一波會出現的怪物」的六段動作，確保一開打就看得到
+    // 走路、攻擊、施法、受傷、死亡；其餘怪物在背景依動作分批補齊。
+    var firstWaveArts = [];
+    try {
+      var rd0 = (lv.RoundInfos || [])[0];
+      ((rd0 && rd0.EnemyIDs) || []).forEach(function (eid) {
+        var en = enemyById(num(eid, 0));
+        if (en && en.Art && firstWaveArts.indexOf(en.Art) < 0) firstWaveArts.push(en.Art);
+      });
+    } catch (err) {}
+    if (!firstWaveArts.length) firstWaveArts = ids.slice(0, 18);
+
+    function warmRest() {
+      if (!window.ART || !ids.length) return;
+      ART.loadMonsters(ids, null, ["idle", "walk"])
+        .then(function () { return ART.loadMonsters(ids, null, ["attack", "special"]); })
+        .then(function () { return ART.loadMonsters(ids, null, ["hurt", "die"]); });
+    }
+
+    function beginGame() {
+      go();
+      warmRest();
+    }
+
+    function preloadFirstWave() {
+      return ART.loadMonsters(firstWaveArts, function (done, total) {
+        if (note) note.textContent = "載入怪物動作 " + done + " / " + total + "…";
+      }, ["idle", "walk", "attack", "special", "hurt", "die"]);
+    }
+
     startBtn.disabled = true;
     if (window.ART && !ART.isReady()) {
       if (note) note.textContent = "載入原版美術中…";
-      ART.load().then(function () {
-        return ART.loadMonsters(ids, function (done, total) {
-          if (note) note.textContent = "載入怪物素材 " + done + " / " + total + "…";
-        }, ["idle"]);
-      }).then(function () {
-        go();
-        ART.loadMonsters(ids); // 其餘動作（行走／攻擊／死亡）背景補齊
-      });
+      ART.load().then(preloadFirstWave).then(beginGame);
       return;
     }
-    if (window.ART && ids.length) {
-      if (note) note.textContent = "載入怪物素材 0 / " + ids.length + "…";
-      ART.loadMonsters(ids, function (done, total) {
-        if (note) note.textContent = "載入怪物素材 " + done + " / " + total + "…";
-      }, ["idle"]).then(function () {
-        go();
-        ART.loadMonsters(ids);
-      });
+    if (window.ART) {
+      if (note) note.textContent = "載入怪物動作 0 / " + firstWaveArts.length + "…";
+      preloadFirstWave().then(beginGame);
       return;
     }
     go();
@@ -4017,6 +5817,7 @@
 
   document.getElementById("quitBtn").addEventListener("click", function () {
     if (G) G.over = true;
+    if (window.AUDIO) AUDIO.playBgm("menu");
     hud.classList.add("hidden");
     menuEl.classList.remove("hidden");
     gameOverEl.classList.add("hidden");
@@ -4039,6 +5840,7 @@
     gameOverEl.classList.add("hidden");
     hud.classList.add("hidden");
     menuEl.classList.remove("hidden");
+    if (window.AUDIO) AUDIO.playBgm("menu");
   });
 
   // ---------------------------------------------------------------- boot
@@ -4074,10 +5876,14 @@
     get state() { return G; },
     get config() { return CONFIG; },
     cast: function (i) { return G ? castSpell(i | 0, true) : false; },
+    ultimate: function () { return G ? castUltimate(true) : false; },
     gainExp: function (n) { if (G) gainExp(num(n, 0) || 0); },
     levelUp: function () { if (G) levelUp(); },
-    version: "2026-10-25-4"
+    version: "2026-10-25-5"
   };
+
+  // 主選單音樂（瀏覽器要求第一次互動後才會真正播放）
+  if (window.AUDIO) AUDIO.playBgm("menu");
 
   loadConfig();
 })();
