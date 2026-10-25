@@ -23,7 +23,9 @@
     clearInterval(timer);
     var p = G.player;
     var keys = ["poisonNova", "galeWheel", "earthSpikes", "frostDomain", "windStep", "lastStand",
-      "bladeCyclone", "voidRift", "starBurst", "thunderGod", "lastStand2"];
+      "bladeCyclone", "voidRift", "starBurst", "thunderGod", "lastStand2",
+      "iceTrap", "stormCloud", "spiritWolf", "sunBeam", "bloodMoon",
+      "glacier", "inferno", "judgement", "eclipse"];
     var abilityKeys = dbg.abilityKeys();
     var present = {};
     keys.forEach(function (k) {
@@ -52,7 +54,9 @@
         timers: {
           poison: timers.poison, gale: timers.gale, spikes: timers.spikes, domain: timers.domain,
           blade: timers.blade, void: timers.void, star: timers.star, god: timers.god,
-          lastStand2: timers.lastStand2
+          lastStand2: timers.lastStand2, trap: timers.trap, cloud: timers.cloud,
+          wolf: timers.wolf, sun: timers.sun, blood: timers.blood,
+          glacier: timers.glacier, inferno: timers.inferno, judge: timers.judge, eclipse: timers.eclipse
         },
         poisonEnemies: venom,
         fxTypes: m,

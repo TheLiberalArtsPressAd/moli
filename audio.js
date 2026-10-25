@@ -81,7 +81,17 @@
     shrine:            { vol: 0.42, cd: 0.6 },
     powerup:           { vol: 0.40, cd: 0.6 },
     campfire:          { vol: 0.36, cd: 0.8 },
-    totem:             { vol: 0.50, cd: 0.6 }
+    totem:             { vol: 0.50, cd: 0.6 },
+    // 新能力與新波次
+    glacier:           { vol: 0.44, cd: 0.35 },
+    inferno:           { vol: 0.50, cd: 0.55 },
+    judgement:         { vol: 0.50, cd: 0.55 },
+    eclipse:           { vol: 0.52, cd: 0.80 },
+    bloodmoon:         { vol: 0.50, cd: 0.60 },
+    sunbeam:           { vol: 0.46, cd: 0.40 },
+    wolf:              { vol: 0.40, cd: 0.35 },
+    siege:             { vol: 0.55, cd: 1.20 },
+    storm:             { vol: 0.50, cd: 0.45 }
   };
 
   function playSynth(name) {
@@ -253,6 +263,48 @@
       osc("sawtooth", 196, 98, 0.6, 0.16, 0.03);
       noise(0.5, 0.3, 0, "lowpass", 700, 140, 0.8);
       osc("triangle", 660, 330, 0.45, 0.12, 0.1);
+    } else if (name === "glacier") {
+      noise(0.5, 0.4, 0, "highpass", 3800, 1200, 0.7);
+      osc("sine", 1800, 700, 0.45, 0.22, 0);
+      osc("triangle", 900, 320, 0.6, 0.18, 0.04);
+      noise(0.35, 0.25, 0.08, "lowpass", 700, 180, 0.9);
+    } else if (name === "inferno") {
+      noise(0.8, 0.42, 0, "lowpass", 420, 2600, 1.1);
+      osc("sawtooth", 110, 320, 0.7, 0.24, 0);
+      osc("square", 55, 90, 0.9, 0.12, 0.06);
+      noise(0.5, 0.24, 0.25, "bandpass", 900, 2400, 1.6);
+    } else if (name === "judgement") {
+      [784, 988, 1175, 1568].forEach(function (f, i) { osc("sine", f, f, 0.9, 0.16, i * 0.05); });
+      osc("triangle", 392, 392, 0.8, 0.14, 0.02);
+      noise(0.4, 0.2, 0, "highpass", 5000, 2600, 0.8);
+    } else if (name === "eclipse") {
+      osc("sine", 70, 30, 1.0, 0.44, 0);
+      osc("sawtooth", 150, 45, 0.9, 0.18, 0.05, -25);
+      noise(0.8, 0.28, 0, "lowpass", 500, 90, 1.3);
+      osc("sine", 500, 120, 0.6, 0.1, 0.2);
+    } else if (name === "bloodmoon") {
+      osc("sawtooth", 90, 44, 0.8, 0.36, 0);
+      osc("sine", 220, 110, 0.7, 0.2, 0.05);
+      noise(0.5, 0.24, 0, "lowpass", 800, 180, 1.0);
+      osc("triangle", 660, 330, 0.5, 0.12, 0.14);
+    } else if (name === "sunbeam") {
+      noise(0.5, 0.34, 0, "bandpass", 700, 3200, 1.2);
+      osc("sine", 1200, 1800, 0.4, 0.2, 0);
+      osc("sawtooth", 180, 90, 0.5, 0.18, 0.03);
+    } else if (name === "wolf") {
+      noise(0.3, 0.34, 0, "bandpass", 600, 2600, 1.5);
+      osc("sine", 360, 120, 0.32, 0.24, 0);
+      osc("sawtooth", 180, 80, 0.4, 0.12, 0.06);
+    } else if (name === "siege") {
+      osc("sawtooth", 98, 196, 0.9, 0.34, 0);
+      osc("square", 196, 98, 0.8, 0.12, 0.04);
+      noise(0.5, 0.28, 0, "lowpass", 700, 160, 0.8);
+      osc("sine", 70, 55, 0.7, 0.26, 0.3);
+    } else if (name === "storm") {
+      noise(0.3, 0.6, 0, "highpass", 3000, 900, 0.6);
+      osc("square", 95, 40, 0.42, 0.34, 0.01);
+      osc("sawtooth", 480, 70, 0.25, 0.18, 0);
+      noise(0.8, 0.24, 0.1, "lowpass", 900, 120, 0.8);
     }
   }
 
