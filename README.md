@@ -19,11 +19,12 @@ Unity C# 專案（Unity 2021.3.30f1），另外附一份純 HTML5 網頁版。
 | `index.html` / `game.js` / `style.css` | 網頁版遊戲 |
 | `art.js` | 網頁版美術層（俯視角、原版地圖 + 各關卡色調、角色、怪物、場景物件） |
 | `web-assets/art/` | 網頁版使用的美術素材（由 `Tools/build-web-assets.ps1` 從 `Assets/` 產生） |
-| `web-assets/monsters/` | 405 種原版怪物素材 × 6 種動作（待機／行走／攻擊／施法／受傷／死亡） |
+| `web-assets/monsters/` | 405 種原版怪物素材 × 6 種動作（待機／行走／攻擊／施法／受傷／死亡）＋攤平後的 `<state>_sheet.webp` |
 | `Tools/build-web-assets.ps1` | 從專案原本的美術檔產生 `web-assets/art/` |
 | `Tools/extract-cg-character.py` | 從原版客戶端 `Graphic*.bin` / `Anime*.bin` 解出角色圖檔（Python 版 CGTool） |
 | `Tools/build-character-assets.py` | 產生劍士／弓箭手的 8 方向待機、行走、攻擊 sprite sheet |
 | `Tools/build-monster-assets.py` | 掃描怪物素材資料夾，產生 `web-assets/monsters/` 與 `catalog.json`（可續傳，只補缺的動作） |
+| `Tools/build-monster-sheets.py` | 把動畫 WebP 攤成橫向 sprite sheet（`<state>_sheet.webp`）並產生 `sheets.json`，讓 canvas 能逐格播放 |
 | `Tools/build-levels.js` | 由怪物圖鑑自動產生 15 個地區關卡與霸主設計（含怪物技能、地區機制、精英怪與霸主第三階段） |
 | `Tools/monster-preview.html` | 405 種怪物圖鑑（可切換 6 種動作） |
 | `Tools/biome-preview.html` | 十五個關卡的景色預覽頁 |
@@ -85,9 +86,12 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
 - 視角是**俯視角**（和 Unity 版一樣），不是斜角。
 - 每個關卡都用同一張原版地圖，加上不同色調分級與環境效果做出不同景色：
   森林、海島、樹海、洞窟、沙漠、雪山、火山、靈堂、海底。
-- **怪物全部使用原版素材**：`web-assets/monsters/` 內含 405 種怪物、2,424 段動畫，
+- **怪物全部使用原版素材**：`web-assets/monsters/` 內含 405 種怪物、2,430 段動作，
   每種都有待機（idle）／行走（walk）／攻擊（attack）／施法（special）／受傷（hurt）／死亡（die），
   戰鬥中會依狀態播放；素材來自 `魔力寶貝怪物素材`，以無損動畫 WebP 轉檔（約 53 MB）。
+- **動畫 WebP 在 canvas 上只會停在第一格**，所以 `Tools/build-monster-sheets.py` 會把每段動作
+  攤成橫向 sprite sheet，`art.js` 再依 `sheets.json` 的格數與每格毫秒自己切格。走路、攻擊、
+  詠唱、受傷、死亡都是真的逐格播放，不是單張圖。
 - **主角也使用原版角色圖**：劍士是西恩（客戶端角色 105053）、弓箭手是葛蕾絲（106126），
   兩者都有 8 方向 × 待機／行走／攻擊，腳底錨點對齊，遊戲中會依移動方向與攻擊狀態切換。
   角色圖直接從客戶端 `Graphic*.bin` / `Anime*.bin` 解出，不是用舊的單張 GIF 改色。
@@ -100,6 +104,7 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
 
   ```powershell
   python Tools\build-monster-assets.py
+  python Tools\build-monster-sheets.py
   node Tools\build-levels.js
   ```
 
@@ -135,6 +140,8 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
   （神社、遺跡、冰晶、岩漿裂縫、墓碑、珊瑚、發光菇），讓 15 關除了色調之外各有輪廓。
 - 每關 5 波：先鋒／主力／精銳／親衛＋霸主。前四波依體型把該地區**所有**怪物分批派出，
   所以每個地區圖鑑裡的怪物都一定會出現。
+- **怪物會持續補充**：普通波有場上同時存活上限（隨難度提高）與補充節奏，死掉後會從該關怪物池
+  繼續出怪，不會清空就乾等；霸主波則只打霸主與援軍，不會無限補怪。
 - 難度隨關卡序號上升（怪物 HP／ATK／DEF 與波次等級都會提高），霸主血量與攻擊另有加成。
 - **霸主有專屬招式與第二／第三階段**（血量降到指定比例後狂暴、狂亂，出招更快）：
 
@@ -161,13 +168,16 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
 
 ## 角色魔法（MP／冷卻／自動施放）
 
-- 每位角色有 **6 個魔法**，開場即擁有前 3 個，第 4～6 個依 `UnlockLevel` 解鎖（Lv.4／Lv.6）。
-- 魔法會**自動施放**（冷卻完成、MP 足夠、有合適目標時），也可以按鍵盤 `1`～`6` 手動施放。
+- 每位角色開場有 **6 個魔法**，開場即擁有前 3 個，第 4～6 個依 `UnlockLevel` 解鎖（Lv.4／Lv.6）。
+- 升級卡會出現 **12 種新魔法**（冰錐術、烈焰噴射、風暴之眼、毒爆術、暗影新星、聖光十字、
+  雷神之怒、時空裂縫、流星雨、治癒之泉、荊棘領域、元素稜鏡），可自由學成，
+  **魔法書上限 9 格**，讓每局的技能組合都不一樣。
+- 魔法會**自動施放**（冷卻完成、MP 足夠、有合適目標時），也可以按鍵盤 `1`～`9` 手動施放。
 - HUD 左下新增 **MP 條**與狀態列（護盾、緩速、持續回復、地區機制倒數）；技能列會顯示快捷鍵、
   MP 消耗、冷卻秒數與魔法階級 `R1`～`R5`，魔力不足時變紅、未解鎖時顯示 `Lv N`。
 - MP 會隨時間自然回復，升級時上限提高；升級選項中會出現 **魔法精研**（傷害／效果 +18%、冷卻與消耗降低）、
   魔力、法術強度、冷卻與消耗相關強化。
-- 升級時保證至少一張「魔法」或「能力」卡，不會只出現純數值卡。
+- 升級時一次給 **4 張卡（2×2 排列）**，並保證至少兩張「魔法」或「能力」卡，不會只出現純數值卡。
 
 | 角色 | 魔法書 | 定位 |
 | --- | --- | --- |
@@ -176,7 +186,7 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
 
 ### 升級被動能力
 
-升級卡新增 10 種可疊加的能力（最高 1～3 級），會實際改變戰鬥節奏：
+升級卡新增 14 種可疊加的能力（最高 1～3 級），會實際改變戰鬥節奏：
 
 | 能力 | 效果 |
 | --- | --- |
@@ -190,6 +200,10 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
 | 致命節奏 | 擊殺疊加攻速，最多 10 層 |
 | 魔力湧動 | 提高最大魔力與魔力回復 |
 | 守護天使 | 每場一次，瀕死時以 50% 生命復活並獲得護盾 |
+| 生命綻放 | 每秒回復最大生命百分比 |
+| 連鎖新星 | 定期釋放連鎖閃電，跳躍多個目標 |
+| 流星印記 | 定期在敵群降下多顆流星 |
+| 奧術環繞 | 以奧術光環持續切割身邊敵人 |
 
 ## 怪物技能與精英怪
 
@@ -202,7 +216,8 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
   行走時有步伐起伏、攻擊有前衝、施法會浮起、受傷會抖動、死亡會完整播放後才淡出。
 - **多種移動 AI**：直衝 `chaser`、蛇行 `zigzag`、繞行 `circler`、遠程游擊 `skirmisher`、
   支援 `support`、重裝 `brute`、蓄力衝鋒 `charger`；衝鋒前會停下並亮起警示圈。
-- **多種近戰演出**：斬擊 `slash`、撕咬 `bite`、重砸 `slam`、突刺 `sting`，依體型與速度分配。
+- **多種近戰演出**：斬擊 `slash`、撕咬 `bite`、重砸 `slam`、突刺 `sting`、爪擊 `claw`，
+  以及三段連擊 `combo`、遠距吐息 `spit`；近戰有起手動作與延遲命中，看到抬手可以走位躲開。
 - 每一波會依關卡難度標記 **精英怪**（名稱前綴 `精英·`、金色光環、2.35 倍 HP、1.3 倍 ATK、
   額外技能、3.2 倍經驗）；後期關卡的精銳／親衛波精英數量更多。
 - 霸主在血量低於 `Phase2At` 後進入狂暴，低於 `Phase3At` 後進入 **狂亂**：出招更快、彈幕更密，
@@ -251,7 +266,7 @@ powershell -ExecutionPolicy Bypass -File Tools\serve-web.ps1
 | `?showcase=1` | 在角色周圍排出該關卡最多 30 種怪物（純美術預覽，戰鬥暫停） |
 
 - 瀏覽器 Console 可用 `MOLI.state` 讀取目前戰鬥狀態、`MOLI.config` 讀取設定，
-  `MOLI.cast(0..5)` 手動施放魔法（除錯用），`MOLI.gainExp(n)` 快速取得經驗測試升級卡。
+  `MOLI.cast(0..8)` 手動施放魔法（除錯用），`MOLI.gainExp(n)` 快速取得經驗測試升級卡。
 
 
 ## 場景

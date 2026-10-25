@@ -608,7 +608,16 @@ body.admin { overflow: auto; }
 .skillChip.nomp .ico { filter: grayscale(0.6) brightness(0.7); }
 .skillChip.nomp .meta { color: #ff8a8a; }
 
-/* 升級卡片：原版技能圖示 */
+/* 升級卡片：四選一，固定 2x2 排列（原版技能圖示） */
+#levelUp .panel { max-width: 620px; }
+#upgradeList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 560px) {
+  #upgradeList { grid-template-columns: 1fr; }
+}
 .card.upgrade {
   flex: 1 1 150px;
   text-align: center;

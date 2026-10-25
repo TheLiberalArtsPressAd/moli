@@ -82,32 +82,62 @@
   function isReady() { return loaded; }
 
   // --------------------------------------------------- 原版怪物素材（含動作狀態）
-  // web-assets/monsters/<id>/{idle,walk,attack,die}.webp
-  // 由 Tools/build-monster-assets.py 從「魔力寶貝怪物素材」轉出（無損動畫 WebP）
+  // 動畫 WebP 直接 drawImage 到 canvas 時只會停在第一格，所以
+  // Tools/build-monster-sheets.py 會把每一格攤成橫向 sprite sheet：
+  //   web-assets/monsters/<id>/<state>_sheet.webp
+  //   web-assets/monsters/sheets.json（每格尺寸、格數、每格毫秒）
+  // 這裡依時間自己切格，走動／攻擊／施法／受傷／死亡才會真的動起來。
   var MON_DIR = ART_DIR.replace(/web-assets\/art\/$/, "web-assets/monsters/");
-  var MON = {};        // id -> { idle, walk, attack, die }
+  var MON = {};        // id -> { idle, walk, attack, special, hurt, die }
+  var MON_META = null;
+  var monMetaPromise = null;
+  var ANIM_STATES = ["idle", "walk", "attack", "special", "hurt", "die"];
+
+  function loadMonsterMeta() {
+    if (monMetaPromise) return monMetaPromise;
+    monMetaPromise = fetch(MON_DIR + "sheets.json", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : {}; })
+      .catch(function () { return {}; })
+      .then(function (data) { MON_META = data || {}; return MON_META; });
+    return monMetaPromise;
+  }
 
   function loadMonster(id, states) {
     if (!id) return Promise.resolve(null);
-    states = states || ["idle", "walk", "attack", "special", "hurt", "die"];
+    states = states || ANIM_STATES;
     var set = MON[id];
     if (!set) {
       set = {};
       MON[id] = set;
     }
-    var jobs = [];
-    states.forEach(function (state) {
-      if (set[state]) return;
-      var key = "_p_" + state;
-      if (set[key]) { jobs.push(set[key]); return; }
-      set[key] = loadImage(MON_DIR + id + "/" + state + ".webp").then(function (img) {
-        if (img) set[state] = img;
-        delete set[key];
-        return img;
+    return loadMonsterMeta().then(function () {
+      var jobs = [];
+      states.forEach(function (state) {
+        if (set[state]) return;
+        var key = "_p_" + state;
+        if (set[key]) { jobs.push(set[key]); return; }
+        set[key] = loadImage(MON_DIR + id + "/" + state + "_sheet.webp").then(function (img) {
+          if (!img) {
+            // 舊資料（尚未產生 sheet）時退回單一動畫檔，至少不會空白
+            return loadImage(MON_DIR + id + "/" + state + ".webp").then(function (old) {
+              if (old) set[state] = old;
+              delete set[key];
+              return old;
+            });
+          }
+          set[state] = img;
+          delete set[key];
+          return img;
+        });
+        jobs.push(set[key]);
       });
-      jobs.push(set[key]);
+      return Promise.all(jobs).then(function () { return set; });
     });
-    return Promise.all(jobs).then(function () { return set; });
+  }
+
+  function monsterMeta(id, state) {
+    var m = MON_META && MON_META[id];
+    return (m && m[state]) || null;
   }
 
   function loadMonsters(ids, onProgress, states) {
@@ -239,6 +269,72 @@
     volcano:    { kind: "lavacrack", count: 7, tint: "#ff8a4a" },
     graveyard:  { kind: "grave",     count: 9, tint: "#b9c6e6" },
     underwater: { kind: "coral",     count: 10, tint: "#8fe6ff" }
+  };
+
+  // 每個生物群系的裝飾小物、地面貼花與前景植物
+  var THEME_PROPS = {
+    forest:     ["rock", "bush", "stump", "fern", "rock"],
+    island:     ["rock", "shell", "bush", "reed", "rock"],
+    deepforest: ["bush", "rock", "fern", "stump", "bush"],
+    cave:       ["rock", "bones", "crystalbit", "rock"],
+    cave2:      ["rock", "bones", "torch", "crystalbit", "rock"],
+    snow:       ["icespike", "rock", "bones", "pine", "icespike"],
+    desert:     ["cactus", "rock", "bones", "ruin", "cactus"],
+    volcano:    ["rock", "lavacrack", "bones", "torch", "rock"],
+    graveyard:  ["bones", "statue", "grave", "torch", "bones"],
+    underwater: ["coral", "shell", "rock", "reed", "coral"]
+  };
+
+  var THEME_DECALS = {
+    forest:     ["tuft", "flower", "pebble", "leaf", "moss"],
+    island:     ["tuft", "flower", "pebble", "shell", "sand"],
+    deepforest: ["tuft", "mushroom", "leaf", "moss", "pebble"],
+    cave:       ["crack", "pebble", "moss", "crystalbit", "ash"],
+    cave2:      ["crack", "pebble", "moss", "crystalbit", "ash"],
+    snow:       ["snowdrift", "crack", "pebble", "icebit", "snowdrift"],
+    desert:     ["sand", "pebble", "bones", "crack", "cactusbit"],
+    volcano:    ["crack", "ember", "pebble", "ash", "bones"],
+    graveyard:  ["crack", "moss", "bones", "leaf", "ash"],
+    underwater: ["sand", "shell", "bubble", "moss", "pebble"]
+  };
+
+  var THEME_FG = {
+    forest: ["grass", "fern", "leaf"],
+    island: ["grass", "reed", "leaf"],
+    deepforest: ["grass", "fern", "leaf"],
+    cave: ["stalag", "moss", "drip"],
+    cave2: ["stalag", "moss", "drip"],
+    snow: ["grass", "snowbank", "icebit"],
+    desert: ["grass", "reed", "sand"],
+    volcano: ["grass", "ember", "ash"],
+    graveyard: ["grass", "moss", "wisp"],
+    underwater: ["reed", "coral", "bubble"]
+  };
+
+  var DECAL_COLORS = {
+    forest:     { tuft: "#79b04a", flower: "#ffe27a", pebble: "#8d8a7a", leaf: "#c8a35a", moss: "#5c8a3c" },
+    island:     { tuft: "#8fc35a", flower: "#ffd6e6", pebble: "#c9bfa0", shell: "#f2e3c8", sand: "#e6d29a" },
+    deepforest: { tuft: "#4f8a46", mushroom: "#9fe6b8", leaf: "#7a5f32", moss: "#3f6b3e", pebble: "#6b6a5a" },
+    cave:       { crack: "#2a2140", pebble: "#6f6886", moss: "#4f7f72", crystalbit: "#b49cff", ash: "#544a68" },
+    cave2:      { crack: "#24384a", pebble: "#6b7d8f", moss: "#4f8f86", crystalbit: "#9fd8ff", ash: "#4a5c6b" },
+    snow:       { snowdrift: "#f4fbff", crack: "#8fa6bb", pebble: "#b8c6d6", icebit: "#d8f4ff", ash: "#a4b6c6" },
+    desert:     { sand: "#e9cf94", pebble: "#b8a073", bones: "#eee6cf", crack: "#9c7b4d", cactusbit: "#6f9a4a" },
+    volcano:    { crack: "#3a1c14", ember: "#ff8a3d", pebble: "#6b4a3e", ash: "#54443c", bones: "#d8c7b0" },
+    graveyard:  { crack: "#2c3244", moss: "#4f6b58", bones: "#d8d8cc", leaf: "#6b5a3d", ash: "#4a5060" },
+    underwater: { sand: "#8fbfcf", shell: "#e8f6ff", bubble: "#c8f4ff", moss: "#5aa08f", pebble: "#6b8f9a" }
+  };
+
+  var LEVEL_TINT = {
+    forest: ["rgba(255,235,150,0.06)", "rgba(120,200,255,0.05)", "rgba(255,160,90,0.05)"],
+    island: ["rgba(255,240,180,0.08)", "rgba(140,230,255,0.06)", "rgba(255,190,120,0.06)"],
+    deepforest: ["rgba(90,255,180,0.04)", "rgba(120,160,255,0.05)", "rgba(255,120,90,0.04)"],
+    cave: ["rgba(150,120,255,0.06)", "rgba(90,200,255,0.05)", "rgba(255,120,200,0.04)"],
+    cave2: ["rgba(90,200,255,0.06)", "rgba(140,255,200,0.05)", "rgba(200,150,255,0.05)"],
+    snow: ["rgba(180,220,255,0.08)", "rgba(230,245,255,0.07)", "rgba(150,190,255,0.06)"],
+    desert: ["rgba(255,210,120,0.07)", "rgba(255,170,90,0.06)", "rgba(255,240,190,0.06)"],
+    volcano: ["rgba(255,110,40,0.07)", "rgba(255,170,60,0.06)", "rgba(200,60,20,0.07)"],
+    graveyard: ["rgba(120,160,255,0.06)", "rgba(160,120,255,0.05)", "rgba(90,255,200,0.04)"],
+    underwater: ["rgba(90,200,255,0.07)", "rgba(120,255,220,0.06)", "rgba(180,140,255,0.05)"]
   };
 
   function biomeFor(level) {
@@ -383,7 +479,66 @@
       });
     }
 
-    var props = trees.concat(landmarks);
+    // 地面貼花：草叢、花、碎石、裂縫、雪堆、貝殼等，讓每個地區的地表不再單調
+    var decals = [];
+    var decalKinds = THEME_DECALS[biomeKey] || THEME_DECALS.forest;
+    var decalColors = DECAL_COLORS[biomeKey] || DECAL_COLORS.forest;
+    var decalCount = clampNum(Math.round(w * h / 7800), 150, 320);
+    for (var di = 0; di < decalCount; di++) {
+      var dkind = decalKinds[Math.floor(r() * decalKinds.length)];
+      decals.push({
+        kind: dkind,
+        x: 30 + r() * (w - 60),
+        y: 40 + r() * (h - 80),
+        s: 0.55 + r() * 0.9,
+        rot: r() * Math.PI * 2,
+        color: decalColors[dkind] || "#9a9a88",
+        phase: r() * Math.PI * 2
+      });
+    }
+
+    // 主題小物：岩石、灌木、仙人掌、冰柱、白骨、貝殼、火把、雕像…
+    var extraProps = [];
+    var decoKinds = THEME_PROPS[biomeKey] || THEME_PROPS.forest;
+    var decoCount = clampNum(Math.round(w * h / 26000), 10, 28);
+    var dguard = 0;
+    while (extraProps.length < decoCount && dguard < decoCount * 40) {
+      dguard++;
+      var dxp = 70 + r() * (w - 140);
+      var dyp = 90 + r() * (h - 180);
+      var dcx = dxp - cx, dcy = dyp - cy;
+      if (dcx * dcx + dcy * dcy < 190 * 190) continue;
+      var dkind2 = decoKinds[Math.floor(r() * decoKinds.length)];
+      extraProps.push({
+        type: "deco",
+        kind: dkind2,
+        x: dxp, y: dyp,
+        scale: 0.65 + r() * 0.75,
+        flip: r() > 0.5,
+        tint: decalColors[dkind2] || "#9a9a88",
+        phase: r() * Math.PI * 2
+      });
+    }
+
+    // 前景層：高草、蘆葦、蕨葉、鐘乳石等，畫在角色之上製造景深
+    var fg = [];
+    var fgKinds = THEME_FG[biomeKey] || THEME_FG.forest;
+    var fgCount = clampNum(Math.round(w * h / 16000), 40, 110);
+    for (var fi2 = 0; fi2 < fgCount; fi2++) {
+      fg.push({
+        kind: fgKinds[Math.floor(r() * fgKinds.length)],
+        x: 20 + r() * (w - 40),
+        y: 30 + r() * (h - 60),
+        scale: 0.55 + r() * 1.05,
+        phase: r() * Math.PI * 2,
+        alpha: 0.35 + r() * 0.45
+      });
+    }
+
+    var tintOpts = LEVEL_TINT[biomeKey] || LEVEL_TINT.forest;
+    var tint = tintOpts[hashStr(level.Name || "level") % tintOpts.length];
+
+    var props = trees.concat(landmarks).concat(extraProps);
     props.sort(function (a, b) { return a.y - b.y; });
 
     return {
@@ -392,6 +547,9 @@
       w: w, h: h,
       bg: bg,
       props: props,
+      decals: decals,
+      fg: fg,
+      tint: tint,
       arena: { x: cx, y: cy, r: arenaR, color: level.ArenaColor || "#ffcf7a" },
       seed: hashStr((level.Name || "") + ":" + biomeKey)
     };
@@ -425,12 +583,149 @@
       ctx.fillStyle = "#3f6b2a";
       ctx.fillRect(ox, oy, scene.w, scene.h);
     }
+
+    // 每關專屬色調，即使是同一種地形也有不同氣氛
+    if (scene.tint) {
+      ctx.save();
+      ctx.globalCompositeOperation = "overlay";
+      ctx.fillStyle = scene.tint;
+      ctx.fillRect(ox, oy, scene.w, scene.h);
+      ctx.restore();
+    }
+
+    // 地面貼花
+    if (scene.decals) {
+      for (var i = 0; i < scene.decals.length; i++) {
+        var d = scene.decals[i];
+        var sx = d.x + ox, sy = d.y + oy;
+        if (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40) continue;
+        drawDecal(ctx, d, sx, sy, time);
+      }
+    }
+  }
+
+  function drawDecal(ctx, d, sx, sy, time) {
+    var s = d.s || 1;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(d.rot || 0);
+    ctx.scale(s, s);
+    var c = d.color || "#9a9a88";
+    if (d.kind === "tuft") {
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = "round";
+      for (var i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * 3, 2);
+        ctx.quadraticCurveTo(i * 4, -3, i * 3 + Math.sin(time * 1.8 + d.phase + i) * 2, -9 - (i === 0 ? 3 : 0));
+        ctx.stroke();
+      }
+    } else if (d.kind === "flower" || d.kind === "mushroom") {
+      ctx.strokeStyle = d.kind === "flower" ? "#6f9a4a" : "#c9bfa0";
+      ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.moveTo(0, 2); ctx.lineTo(0, -6); ctx.stroke();
+      ctx.fillStyle = c;
+      if (d.kind === "flower") {
+        for (var p = 0; p < 4; p++) {
+          var pa = p * Math.PI / 2;
+          ctx.beginPath(); ctx.arc(Math.cos(pa) * 3, -7 + Math.sin(pa) * 2.4, 2.1, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.fillStyle = "#fff6c8";
+        ctx.beginPath(); ctx.arc(0, -7, 1.4, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.ellipse(0, -7, 5, 2.8, 0, Math.PI, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.45)";
+        ctx.beginPath(); ctx.arc(-1.5, -8, 0.9, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (d.kind === "pebble" || d.kind === "ash") {
+      ctx.fillStyle = c;
+      ctx.globalAlpha = d.kind === "ash" ? 0.55 : 0.8;
+      ctx.beginPath(); ctx.ellipse(0, 0, 4.2, 2.4, 0.2, 0, Math.PI * 2); ctx.fill();
+      if (d.kind === "pebble") {
+        ctx.fillStyle = "rgba(255,255,255,0.28)";
+        ctx.beginPath(); ctx.ellipse(-1, -1, 1.7, 0.9, 0.2, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (d.kind === "leaf" || d.kind === "cactusbit") {
+      ctx.fillStyle = c;
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath(); ctx.ellipse(0, 0, 5, 2, 0.5, 0, Math.PI * 2); ctx.fill();
+      if (d.kind === "leaf") {
+        ctx.strokeStyle = "rgba(0,0,0,0.25)";
+        ctx.lineWidth = 0.7;
+        ctx.beginPath(); ctx.moveTo(-4, 1); ctx.lineTo(4, -1); ctx.stroke();
+      }
+    } else if (d.kind === "moss") {
+      ctx.fillStyle = c;
+      ctx.globalAlpha = 0.28;
+      ctx.beginPath(); ctx.ellipse(0, 0, 9, 4.5, 0.2, 0, Math.PI * 2); ctx.fill();
+    } else if (d.kind === "crack") {
+      ctx.strokeStyle = c;
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-12, 2); ctx.lineTo(-5, -1); ctx.lineTo(0, 1); ctx.lineTo(6, -3); ctx.lineTo(12, 0);
+      ctx.stroke();
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(0, 1); ctx.lineTo(-2, 6); ctx.stroke();
+    } else if (d.kind === "snowdrift") {
+      ctx.fillStyle = c;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.ellipse(0, 0, 11, 5, 0.1, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.beginPath(); ctx.ellipse(-2, -2, 5, 2, 0.1, 0, Math.PI * 2); ctx.fill();
+    } else if (d.kind === "sand") {
+      ctx.strokeStyle = c;
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1.2;
+      for (var sa = 0; sa < 3; sa++) {
+        ctx.beginPath();
+        ctx.arc(0, sa * 3 - 3, 8 - sa, 0.15, Math.PI - 0.15);
+        ctx.stroke();
+      }
+    } else if (d.kind === "shell") {
+      ctx.fillStyle = c;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.ellipse(0, 0, 5, 4, 0.3, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.2)";
+      ctx.lineWidth = 0.8;
+      for (var sh = 1; sh <= 3; sh++) {
+        ctx.beginPath(); ctx.arc(0, 0, sh * 1.4, 0.4, Math.PI * 1.5); ctx.stroke();
+      }
+    } else if (d.kind === "bubble") {
+      ctx.strokeStyle = c;
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.4)";
+      ctx.beginPath(); ctx.arc(-1, -1.2, 1.1, 0, Math.PI * 2); ctx.fill();
+    } else if (d.kind === "crystalbit" || d.kind === "icebit") {
+      ctx.fillStyle = c;
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.moveTo(0, -6); ctx.lineTo(3.5, 0); ctx.lineTo(0, 4); ctx.lineTo(-3.5, 0);
+      ctx.closePath(); ctx.fill();
+    } else if (d.kind === "ember") {
+      ctx.fillStyle = c;
+      ctx.shadowColor = c;
+      ctx.shadowBlur = 8 + 4 * Math.sin(time * 3 + d.phase);
+      ctx.globalAlpha = 0.55 + 0.35 * Math.abs(Math.sin(time * 2 + d.phase));
+      ctx.beginPath(); ctx.arc(0, 0, 2.4, 0, Math.PI * 2); ctx.fill();
+    } else if (d.kind === "bones") {
+      ctx.strokeStyle = c;
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(-6, 1); ctx.lineTo(5, -2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-3, -3); ctx.lineTo(1, 4); ctx.stroke();
+    }
+    ctx.restore();
   }
 
   var TREE_CACHE = {};
 
   function drawProp(ctx, prop, sx, sy) {
     if (prop.type === "landmark") { drawLandmark(ctx, prop, sx, sy); return; }
+    if (prop.type === "deco") { drawDecoProp(ctx, prop, sx, sy); return; }
     if (prop.type !== "tree" || !IMG.tree) return;
     var biomeDef = prop.biomeDef || null;
     var key = prop.scale.toFixed(2) + "|" + (biomeDef ? biomeDef.treeTint : "") + "|" + (prop.swap ? 1 : 0);
@@ -455,6 +750,190 @@
       TREE_CACHE[key] = c;
     }
     ctx.drawImage(img, Math.round(sx - img.width / 2), Math.round(sy - img.height + 6));
+  }
+
+  // 主題小物（純程式繪製，和原版地圖融合）
+  function drawDecoProp(ctx, prop, sx, sy) {
+    var kind = prop.kind;
+    if (kind === "ruin" || kind === "grave" || kind === "lavacrack" || kind === "coral" || kind === "mushroom") {
+      drawLandmark(ctx, { kind: kind, scale: prop.scale, tint: prop.tint, flip: prop.flip }, sx, sy);
+      return;
+    }
+    var t = Date.now() / 1000;
+    var s = prop.scale || 1;
+    ctx.save();
+    ctx.translate(sx, sy);
+    if (prop.flip) ctx.scale(-1, 1);
+    ctx.scale(s, s);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.beginPath(); ctx.ellipse(0, 2, 15, 5, 0, 0, Math.PI * 2); ctx.fill();
+
+    if (kind === "rock") {
+      ctx.fillStyle = "#7b7d75";
+      ctx.beginPath();
+      ctx.moveTo(-14, 0); ctx.lineTo(-10, -13); ctx.lineTo(-2, -18);
+      ctx.lineTo(9, -15); ctx.lineTo(15, -4); ctx.lineTo(12, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#9fa39a";
+      ctx.beginPath();
+      ctx.moveTo(-10, -13); ctx.lineTo(-2, -18); ctx.lineTo(9, -15); ctx.lineTo(2, -10); ctx.lineTo(-6, -9);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = "rgba(30,32,28,0.45)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-6, -9); ctx.lineTo(-4, -2); ctx.stroke();
+    } else if (kind === "bush") {
+      ctx.fillStyle = "#2f5a2c";
+      ctx.beginPath(); ctx.arc(-7, -8, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(6, -9, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#467a3c";
+      ctx.beginPath(); ctx.arc(0, -14, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#5f9a4c";
+      ctx.beginPath(); ctx.arc(-4, -17, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#ffd166";
+      ctx.beginPath(); ctx.arc(7, -13, 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(-8, -10, 1.3, 0, Math.PI * 2); ctx.fill();
+    } else if (kind === "cactus") {
+      ctx.fillStyle = "#568a42";
+      ctx.beginPath(); ctx.roundRect(-5, -30, 10, 30, 5); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(-14, -20, 6, 13, 3); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(8, -25, 6, 15, 3); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(-14, -21, 10, 6, 3); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(4, -26, 11, 6, 3); ctx.fill();
+      ctx.strokeStyle = "rgba(230,255,190,0.45)";
+      ctx.lineWidth = 1;
+      for (var ci = 0; ci < 3; ci++) {
+        ctx.beginPath(); ctx.moveTo(-2 + ci * 2, -27); ctx.lineTo(-2 + ci * 2, -4); ctx.stroke();
+      }
+      if (kind === "cactus") {
+        ctx.fillStyle = "#ff9bd2";
+        ctx.beginPath(); ctx.arc(0, -32, 3, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (kind === "icespike") {
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      for (var ii = 0; ii < 3; ii++) {
+        var ix = [-8, 1, 9][ii], ih = [22, 34, 18][ii];
+        var ig = ctx.createLinearGradient(ix, 0, ix, -ih);
+        ig.addColorStop(0, "rgba(150,220,255,0.55)");
+        ig.addColorStop(0.65, "rgba(220,245,255,0.85)");
+        ig.addColorStop(1, "rgba(255,255,255,0.95)");
+        ctx.fillStyle = ig;
+        ctx.beginPath();
+        ctx.moveTo(ix - 6, 0); ctx.lineTo(ix, -ih); ctx.lineTo(ix + 6, 0);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    } else if (kind === "bones") {
+      ctx.strokeStyle = "#e6e0cf";
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(8, 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-4, -6); ctx.lineTo(2, 5); ctx.stroke();
+      ctx.fillStyle = "#f0ead8";
+      ctx.beginPath(); ctx.arc(-11, -2, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#3a342c";
+      ctx.beginPath(); ctx.arc(-13, -3, 1.3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(-9, -3, 1.3, 0, Math.PI * 2); ctx.fill();
+    } else if (kind === "shell") {
+      ctx.save();
+      ctx.rotate(-0.25);
+      ctx.fillStyle = "#f0e2c8";
+      ctx.beginPath(); ctx.ellipse(0, -5, 11, 9, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#c9a87a";
+      ctx.lineWidth = 1.5;
+      for (var si = 1; si <= 3; si++) {
+        ctx.beginPath(); ctx.arc(0, -5, si * 2.6, 0.4, Math.PI * 1.6); ctx.stroke();
+      }
+      ctx.restore();
+    } else if (kind === "torch") {
+      ctx.fillStyle = "#5a4028";
+      ctx.fillRect(-2.5, -30, 5, 32);
+      ctx.fillStyle = "#3a2a18";
+      ctx.fillRect(-6, -2, 12, 4);
+      var fg2 = 0.6 + 0.4 * Math.sin(t * 7 + (prop.phase || 0));
+      ctx.save();
+      ctx.shadowColor = "#ff9b3d";
+      ctx.shadowBlur = 18 * fg2;
+      ctx.fillStyle = "#ff8a3d";
+      ctx.beginPath(); ctx.ellipse(0, -36, 6, 10 * fg2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#ffe066";
+      ctx.beginPath(); ctx.ellipse(0, -34, 3, 6 * fg2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } else if (kind === "statue") {
+      ctx.fillStyle = "#7d8490";
+      ctx.fillRect(-11, -4, 22, 5);
+      ctx.fillStyle = "#939ba8";
+      ctx.fillRect(-7, -34, 14, 30);
+      ctx.beginPath(); ctx.arc(0, -42, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#6b727e";
+      ctx.beginPath(); ctx.moveTo(-7, -30); ctx.lineTo(-16, -14); ctx.lineTo(-11, -12); ctx.lineTo(-5, -24); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(7, -30); ctx.lineTo(16, -14); ctx.lineTo(11, -12); ctx.lineTo(5, -24); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "rgba(160,220,255,0.45)";
+      ctx.beginPath(); ctx.arc(-2, -43, 1.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(2, -43, 1.4, 0, Math.PI * 2); ctx.fill();
+    } else if (kind === "stump") {
+      ctx.fillStyle = "#6b4a2c";
+      ctx.beginPath(); ctx.ellipse(0, -8, 12, 7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(-12, -8, 24, 10);
+      ctx.fillStyle = "#8a6238";
+      ctx.beginPath(); ctx.ellipse(0, -9, 10, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#5a3e24";
+      ctx.lineWidth = 1;
+      for (var ri = 1; ri <= 2; ri++) {
+        ctx.beginPath(); ctx.ellipse(0, -9, ri * 3.4, ri * 1.8, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+    } else if (kind === "fern") {
+      ctx.strokeStyle = "#4f8a46";
+      ctx.lineWidth = 1.8;
+      for (var fr = -2; fr <= 2; fr++) {
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(fr * 12, -20, fr * 22, -26 + Math.abs(fr) * 4);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(120,200,90,0.75)";
+        ctx.lineWidth = 1;
+      }
+    } else if (kind === "reed") {
+      ctx.strokeStyle = "#6f9a4a";
+      ctx.lineWidth = 1.6;
+      var sway = Math.sin(t * 1.4 + (prop.phase || 0)) * 3;
+      for (var rd = -2; rd <= 2; rd++) {
+        ctx.beginPath();
+        ctx.moveTo(rd * 4, 0);
+        ctx.quadraticCurveTo(rd * 6 + sway, -18, rd * 8 + sway, -34 - Math.abs(rd) * 2);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#8a6a3a";
+      ctx.beginPath(); ctx.ellipse(sway, -35, 2.4, 5, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (kind === "pine") {
+      ctx.fillStyle = "#5a3e24";
+      ctx.fillRect(-2.5, -12, 5, 14);
+      ctx.fillStyle = "#2f5a3c";
+      for (var pi = 0; pi < 3; pi++) {
+        var py = -12 - pi * 13;
+        ctx.beginPath();
+        ctx.moveTo(0, py - 22);
+        ctx.lineTo(-15 + pi * 3, py);
+        ctx.lineTo(15 - pi * 3, py);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = "rgba(200,255,220,0.25)";
+      ctx.beginPath(); ctx.moveTo(0, -47); ctx.lineTo(-7, -26); ctx.lineTo(0, -28); ctx.closePath(); ctx.fill();
+    } else if (kind === "crystalbit") {
+      ctx.save();
+      ctx.shadowColor = "#9fd8ff";
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = "rgba(200,240,255,0.85)";
+      for (var ci2 = 0; ci2 < 3; ci2++) {
+        var cx2 = [-7, 0, 7][ci2], ch2 = [14, 22, 11][ci2];
+        ctx.beginPath();
+        ctx.moveTo(cx2 - 4, 0); ctx.lineTo(cx2, -ch2); ctx.lineTo(cx2 + 4, 0);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   // 各地區地標（純程式繪製，跟原版地圖色調融合）
@@ -597,6 +1076,110 @@
     ctx.beginPath(); ctx.arc(0, 0, a.r * 0.88, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
+  }
+
+  // 前景層：高草、蘆葦、落葉與漂浮粒子，增加景深
+  function drawForeground(ctx, scene, cam, vw, vh, time) {
+    if (!scene || !scene.fg) return;
+    var ox = vw / 2 - cam.x;
+    var oy = vh / 2 - cam.y;
+    for (var i = 0; i < scene.fg.length; i++) {
+      var f = scene.fg[i];
+      var sx = f.x + ox;
+      var sy = f.y + oy;
+      if (sx < -40 || sx > vw + 40 || sy < -60 || sy > vh + 40) continue;
+      var s = f.scale || 1;
+      var sway = Math.sin(time * 1.3 + (f.phase || 0)) * 2.2;
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.scale(s, s);
+      ctx.globalAlpha = f.alpha || 0.5;
+      if (f.kind === "grass") {
+        ctx.strokeStyle = "#4f7a36";
+        ctx.lineWidth = 1.7;
+        ctx.lineCap = "round";
+        for (var gi = -2; gi <= 2; gi++) {
+          ctx.beginPath();
+          ctx.moveTo(gi * 4, 2);
+          ctx.quadraticCurveTo(gi * 5 + sway, -10, gi * 6 + sway * 1.6, -22 - Math.abs(gi) * 3);
+          ctx.stroke();
+        }
+      } else if (f.kind === "fern") {
+        ctx.strokeStyle = "#3f6b3e";
+        ctx.lineWidth = 1.8;
+        for (var fi = -2; fi <= 2; fi++) {
+          ctx.beginPath();
+          ctx.moveTo(0, 2);
+          ctx.quadraticCurveTo(fi * 9 + sway, -12, fi * 18 + sway * 1.5, -16 + Math.abs(fi) * 3);
+          ctx.stroke();
+        }
+      } else if (f.kind === "leaf") {
+        ctx.rotate(sway * 0.2 + time * 0.4);
+        ctx.fillStyle = "#c8a35a";
+        ctx.beginPath(); ctx.ellipse(0, 0, 6, 2.4, 0.5, 0, Math.PI * 2); ctx.fill();
+      } else if (f.kind === "reed") {
+        ctx.strokeStyle = "#5f8a4a";
+        ctx.lineWidth = 1.5;
+        for (var ri2 = -1; ri2 <= 1; ri2++) {
+          ctx.beginPath();
+          ctx.moveTo(ri2 * 5, 2);
+          ctx.quadraticCurveTo(ri2 * 6 + sway, -14, ri2 * 8 + sway * 1.8, -30);
+          ctx.stroke();
+        }
+      } else if (f.kind === "stalag") {
+        ctx.fillStyle = "rgba(60,50,86,0.9)";
+        ctx.beginPath();
+        ctx.moveTo(-10, 4); ctx.lineTo(0, -26 - sway); ctx.lineTo(10, 4);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "rgba(160,140,220,0.25)";
+        ctx.beginPath();
+        ctx.moveTo(-2, 2); ctx.lineTo(0, -22 - sway); ctx.lineTo(3, 2);
+        ctx.closePath(); ctx.fill();
+      } else if (f.kind === "moss") {
+        ctx.fillStyle = "rgba(70,130,90,0.5)";
+        ctx.beginPath(); ctx.ellipse(0, 0, 16, 5, 0, 0, Math.PI * 2); ctx.fill();
+      } else if (f.kind === "drip") {
+        ctx.strokeStyle = "rgba(160,210,255,0.4)";
+        ctx.lineWidth = 1;
+        var dy2 = (time * 80 + i * 37) % 60;
+        ctx.beginPath(); ctx.moveTo(0, -60 + dy2); ctx.lineTo(0, -54 + dy2); ctx.stroke();
+      } else if (f.kind === "snowbank") {
+        ctx.fillStyle = "rgba(245,252,255,0.55)";
+        ctx.beginPath(); ctx.ellipse(0, 0, 22, 7, 0, 0, Math.PI * 2); ctx.fill();
+      } else if (f.kind === "sand") {
+        ctx.fillStyle = "rgba(240,220,160,0.35)";
+        ctx.beginPath(); ctx.ellipse(sway * 2, 0, 14, 4, 0, 0, Math.PI * 2); ctx.fill();
+      } else if (f.kind === "ember") {
+        ctx.fillStyle = "#ff9b3d";
+        ctx.shadowColor = "#ff9b3d";
+        ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(sway, -6 - (time * 14 + i * 9) % 24, 2, 0, Math.PI * 2); ctx.fill();
+      } else if (f.kind === "ash") {
+        ctx.fillStyle = "rgba(200,190,180,0.5)";
+        ctx.beginPath(); ctx.arc(sway, -8 - (time * 10 + i * 7) % 30, 1.6, 0, Math.PI * 2); ctx.fill();
+      } else if (f.kind === "wisp") {
+        ctx.fillStyle = "rgba(160,220,255,0.75)";
+        ctx.shadowColor = "#a9d8ff";
+        ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(sway, -14 + Math.sin(time + i) * 5, 2.6, 0, Math.PI * 2); ctx.fill();
+      } else if (f.kind === "coral") {
+        ctx.strokeStyle = "#8fe6ff";
+        ctx.lineWidth = 2.4;
+        ctx.beginPath(); ctx.moveTo(0, 2); ctx.lineTo(sway, -16); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(sway, -8); ctx.lineTo(sway - 8, -18); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(sway, -10); ctx.lineTo(sway + 8, -20); ctx.stroke();
+      } else if (f.kind === "bubble") {
+        ctx.strokeStyle = "rgba(200,244,255,0.55)";
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(sway, -8 - (time * 16 + i * 11) % 34, 3, 0, Math.PI * 2); ctx.stroke();
+      } else if (f.kind === "icebit") {
+        ctx.fillStyle = "rgba(220,245,255,0.6)";
+        ctx.beginPath();
+        ctx.moveTo(0, -7); ctx.lineTo(4, 0); ctx.lineTo(0, 4); ctx.lineTo(-4, 0);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    }
   }
 
   function propFoot(prop) { return { x: prop.x, y: prop.y }; }
@@ -856,8 +1439,72 @@
     ctx.restore();
   }
 
+  // 依關卡狀態與時間挑選 sprite sheet 的格子。
+  // 攻擊／施法／受傷用「剩餘動作時間」推算，動作才會跟傷害判定對齊；
+  // 待機／行走／死亡則用自己的動畫時鐘循環或播放一次。
+  function sheetFrameIndex(e, state, meta, time) {
+    var n = meta.n || 1;
+    if (n <= 1) return 0;
+    var durs = meta.d || [];
+    var total = 0;
+    for (var i = 0; i < n; i++) total += (durs[i] || 120) / 1000;
+    if (total <= 0) total = n * 0.12;
+
+    // 換狀態（或同狀態重新觸發）時從第一格開始
+    var restarted = state !== e._animState ||
+      ((state === "attack" || state === "hurt" || state === "special") &&
+        (e.stateT || 0) > (e._animMax || 0) + 0.03);
+    if (restarted) {
+      e._animState = state;
+      e._animT = 0;
+      e._animMax = Math.max(0.12, e.stateT || (state === "attack" ? 0.45 : 0.3));
+    }
+    var prev = e._animLastT;
+    e._animLastT = time;
+    var dt = prev === undefined ? 0 : Math.max(0, Math.min(0.12, time - prev));
+
+    var progress = -1;
+    if (state === "attack" || state === "hurt") {
+      progress = 1 - clampNum((e.stateT || 0) / (e._animMax || 0.45), 0, 1);
+    } else if (state === "special" && e.casting && e.casting.max > 0) {
+      progress = 1 - clampNum(e.casting.t / e.casting.max, 0, 1);
+    } else if (state === "special" && (e.stateT || 0) > 0) {
+      progress = 1 - clampNum((e.stateT || 0) / (e._animMax || 0.35), 0, 1);
+    }
+
+    if (progress >= 0) {
+      return clampNum(Math.floor(progress * n), 0, n - 1);
+    }
+
+    // 其餘狀態用動畫時鐘
+    var rate = 1;
+    if (state === "walk") {
+      rate = 0.95 + clampNum((e.spd || 100) / 260, 0, 1) * 0.75 + (e.animSpeed || 0) * 0.1;
+      if (e.slowT > 0) rate *= 0.6;
+    } else if (state === "die") {
+      rate = 1.05;
+    } else if (state === "idle") {
+      rate = 0.85 + (e.animSpeed || 0) * 0.12;
+    }
+    e._animT += dt * rate;
+
+    var t = e._animT;
+    var loop = state === "idle" || state === "walk";
+    if (loop) {
+      t = t % total;
+    } else if (t >= total) {
+      t = total - 0.0001; // 死亡／施法後停在最後一格
+    }
+    var acc = 0;
+    for (var f = 0; f < n; f++) {
+      acc += (durs[f] || 120) / 1000;
+      if (t < acc) return f;
+    }
+    return n - 1;
+  }
+
   function drawEnemy(ctx, e, sx, sy, time, scaleMul) {
-    // 原版怪物圖：依狀態挑選動畫（待機／行走／攻擊／施法／受傷／死亡）
+    // 原版怪物圖：依狀態挑選動作（待機／行走／攻擊／施法／受傷／死亡）
     var set = e.mon ? MON[e.mon] : null;
     if (set && (set.idle || set.walk)) {
       var state = e.dying ? "die" : (e.state || "idle");
@@ -867,47 +1514,92 @@
       if (!img) img = set.walk || set.idle || set.attack || set.die;
       if (!img || !img.height) return;
 
+      var meta = monsterMeta(e.mon, state);
+      // 舊格式（沒有 sheets.json）時整張圖就是單格
+      var fw = meta ? meta.w : img.width;
+      var fh = meta ? meta.h : img.height;
+      var n = meta ? meta.n : 1;
+      var frame = meta ? sheetFrameIndex(e, state, meta, time) : 0;
+
       var bossMul = e.isBoss ? 1.45 : 1;
-      var targetH = clampNum(58 + (img.height - 50) * 0.72, 58, 150) * bossMul * (scaleMul || 1);
-      var scale = targetH / img.height;
-      var w = img.width * scale;
-      var h = img.height * scale;
-      // 死亡動畫至少完整播放 0.65 秒，最後 0.35 秒才淡出
-      var alpha = e.dying ? clampNum((e.dieT || 0) / 0.35, 0, 1) : 1;
+      var targetH = clampNum(58 + (fh - 50) * 0.72, 58, 150) * bossMul * (scaleMul || 1);
+      var scale = targetH / fh;
+      var w = fw * scale;
+      var h = fh * scale;
+
+      // 死亡動畫：前 0.7 秒完整播放，最後 0.3 秒淡出
+      var alpha = e.dying ? clampNum((e.dieT || 0) / 0.3, 0, 1) : 1;
       var phase = e.animPhase || (e.x * 0.013 + e.y * 0.007);
-      var bob = 0, dxOff = 0, dyOff = 0;
-      if (state === "walk") {
-        bob = Math.abs(Math.sin(time * (7.2 + (e.animSpeed || 0)) + phase)) * 2.4;
-        dxOff = Math.sin(time * 4.2 + phase) * 0.9;
+      var bob = 0, dxOff = 0, dyOff = 0, rot = 0;
+      var walkPhase = time * (6.4 + (e.animSpeed || 0)) + phase;
+      var moving = state === "walk";
+
+      if (moving) {
+        var stride = Math.abs(Math.sin(walkPhase));
+        var ws = e.walkStyle || "stalk";
+        if (ws === "hop") {
+          bob = stride * (3.2 + clampNum((e.spd || 100) / 130, 0, 1.4));
+          rot = Math.sin(walkPhase * 0.5) * 0.045 * (e.face || 1);
+        } else if (ws === "stomp") {
+          bob = stride * 2.4;
+          dxOff = Math.sin(walkPhase * 0.5) * 2.4;
+          rot = Math.sin(walkPhase * 0.5) * 0.03 * (e.face || 1);
+        } else if (ws === "sway") {
+          bob = stride * 1.5;
+          rot = Math.sin(walkPhase * 0.5) * 0.07 * (e.face || 1);
+          dxOff = Math.sin(walkPhase * 0.5) * 2.2;
+        } else if (ws === "glide") {
+          bob = Math.sin(walkPhase * 0.5) * 1.4 - 1.2;
+          dxOff = Math.sin(walkPhase * 0.35) * 3.2;
+          rot = Math.sin(walkPhase * 0.3) * 0.02 * (e.face || 1);
+        } else {
+          bob = stride * (1.8 + clampNum((e.spd || 100) / 120, 0, 1.6));
+          dxOff = Math.sin(walkPhase * 0.5) * 1.4;
+          rot = Math.sin(walkPhase * 0.5) * 0.03 * (e.face || 1);
+        }
       } else if (state === "attack") {
-        var ap = 1 - clampNum((e.stateT || 0) / 0.45, 0, 1);
-        var lunge = Math.sin(ap * Math.PI);
-        dxOff = lunge * 7 * (e.face || 1);
-        bob = -lunge * 2;
+        var pr = meta ? (1 - clampNum((e.stateT || 0) / (e._animMax || 0.45), 0, 1)) : 0.5;
+        var lunge = Math.sin(clampNum(pr, 0, 1) * Math.PI);
+        dxOff = lunge * 8 * (e.face || 1);
+        bob = -lunge * 2.4;
+        rot = lunge * 0.09 * (e.face || 1);
       } else if (state === "special") {
-        bob = -2 - Math.abs(Math.sin(time * 5.4 + phase)) * 2.2;
+        bob = -2.5 - Math.abs(Math.sin(time * 5.2 + phase)) * 2.4;
+        rot = Math.sin(time * 3.4 + phase) * 0.025 * (e.face || 1);
       } else if (state === "hurt") {
-        dxOff = Math.sin(time * 68 + phase) * 2.2;
+        dxOff = Math.sin(time * 72 + phase) * 2.6;
+        rot = Math.sin(time * 55 + phase) * 0.05;
       } else if (state === "die") {
-        var dp = 1 - clampNum((e.dieT || 0) / 0.9, 0, 1);
-        dyOff = dp * 2;
-        dxOff = dp * 2 * (e.face || 1);
+        var dp = 1 - clampNum((e.dieT || 0) / 1.0, 0, 1);
+        dyOff = dp * 3;
+        dxOff = dp * 3 * (e.face || 1);
+        rot = dp * 0.16 * (e.face || 1);
       } else {
-        bob = Math.sin(time * 3.6 + phase) * 1.2;
+        bob = Math.sin(time * 3.2 + phase) * 1.1;
       }
 
       e.visW = w;
       e.visH = h;
-      drawShadow(ctx, sx, sy, w * 0.8, e.dying ? alpha * 0.6 : 1);
+      drawShadow(ctx, sx, sy, w * 0.82, e.dying ? alpha * 0.6 : 1);
       ctx.save();
-      ctx.globalAlpha = alpha;
+      ctx.globalAlpha = alpha * (e.spawnFade !== undefined ? clampNum(e.spawnFade, 0, 1) : 1);
       ctx.imageSmoothingEnabled = false;
-      var dx = sx - w / 2 + dxOff, dy = sy - h + bob + dyOff;
-      ctx.drawImage(img, dx, dy, w, h);
+      ctx.translate(sx + dxOff, sy - bob + dyOff);
+      if (rot) ctx.rotate(rot);
+      if ((e.face || 1) < 0) ctx.scale(-1, 1);
+      var sw = fw, sh = fh;
+      var srcX = frame * sw;
+      ctx.drawImage(img, srcX, 0, sw, sh, -w / 2, -h, w, h);
       if (e.hitFlash > 0) {
         ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.45 * alpha;
-        ctx.drawImage(img, dx, dy, w, h);
+        ctx.globalAlpha = 0.5 * alpha;
+        ctx.drawImage(img, srcX, 0, sw, sh, -w / 2, -h, w, h);
+      }
+      // 施法時把色彩疊在怪物身上，讓「正在詠唱」一眼看得出來
+      if (e.casting && !e.dying) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = 0.18 + 0.1 * Math.sin(time * 14);
+        ctx.drawImage(img, srcX, 0, sw, sh, -w / 2, -h, w, h);
       }
       ctx.restore();
       return;
@@ -1069,12 +1761,15 @@
     biomeFor: biomeFor,
     drawGround: drawGround,
     drawProp: drawProp,
+    drawForeground: drawForeground,
     drawArena: drawArena,
     propFoot: propFoot,
     drawPlayer: drawPlayer,
     drawEnemy: drawEnemy,
     loadMonster: loadMonster,
     loadMonsters: loadMonsters,
+    loadMonsterMeta: loadMonsterMeta,
+    monsterMeta: monsterMeta,
     monsterLoaded: monsterLoaded,
     monsterStates: monsterStates,
     monsterDir: MON_DIR,

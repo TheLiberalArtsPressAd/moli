@@ -266,6 +266,7 @@ regionOrder.forEach(function (region, li) {
   const diff = li + 1;
   const list = region.monster_ids.map(function (id) { return byId.get(id); }).filter(Boolean);
   list.sort(function (a, b) { return a.w * a.h - b.w * b.h; });
+  const allIds = list.map(function (m) { return indexOfMon.get(m.id); });
 
   // 依體型切成 4 段，每一段是一波；所有怪物都會出場
   const bands = [[], [], [], []];
@@ -295,14 +296,17 @@ regionOrder.forEach(function (region, li) {
   bands.forEach(function (band, bi) {
     if (!band.length) return;
     const ids = band.map(function (m) { return indexOfMon.get(m.id); });
-    const spawn = clamp(Math.round((12 + diff * 1.5) / band.length), 1, 8);
+    // 每波怪物數量提高，並從整關怪物池抽增援，讓同波出現更多種類
+    const spawn = clamp(Math.round((18 + diff * 2.4) / Math.max(1, band.length)) + 1, 2, 10);
+    const reinforce = Math.max(6, Math.min(22, Math.round(6 + diff * 1.2)));
     rounds.push({
       Level: diff + bi,
       Name: waveNames[bi],
       EnemyIDs: ids,
       SpawnCountPerEnemy: spawn,
+      ReinforceCount: reinforce,
       Duration: 50,
-      ExtraDisturbEnemyIDs: ids,
+      ExtraDisturbEnemyIDs: allIds,
       EliteCount: eliteByWave[bi] || 0,
       Event: waveEvents[bi] || "",
       BossInfos: []

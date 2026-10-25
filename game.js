@@ -37,7 +37,19 @@
       { ID: 109, Name: "魔力虹吸", Kind: "drain", Element: "dark", Icon: 90035, CD: 9, MPCost: 14, Percent: 140, Color: "#c98bff", UnlockLevel: 4 },
       { ID: 110, Name: "隕石術", Kind: "star", Element: "fire", Icon: 10015, CD: 15, MPCost: 30, Percent: 170, Color: "#ffb15c", UnlockLevel: 4 },
       { ID: 111, Name: "時光緩流", Kind: "time", Element: "arcane", Icon: 10139, CD: 14, MPCost: 24, Percent: 80, Color: "#9fd8ff", UnlockLevel: 6 },
-      { ID: 112, Name: "聖光審判", Kind: "holy", Element: "holy", Icon: 90012, CD: 15, MPCost: 30, Percent: 200, Color: "#ffe9a8", UnlockLevel: 6 }
+      { ID: 112, Name: "聖光審判", Kind: "holy", Element: "holy", Icon: 90012, CD: 15, MPCost: 30, Percent: 200, Color: "#ffe9a8", UnlockLevel: 6 },
+      { ID: 113, Name: "冰錐術", Kind: "iceshard", Element: "ice", Icon: 10045, CD: 5, MPCost: 14, Percent: 175, Color: "#9fe8ff", UnlockLevel: 3 },
+      { ID: 114, Name: "烈焰噴射", Kind: "flame", Element: "fire", Icon: 10015, CD: 9, MPCost: 22, Percent: 150, Color: "#ff8a3d", UnlockLevel: 5 },
+      { ID: 115, Name: "風暴之眼", Kind: "storm", Element: "wind", Icon: 10107, CD: 12, MPCost: 26, Percent: 160, Color: "#9ff3d6", UnlockLevel: 7 },
+      { ID: 116, Name: "毒爆術", Kind: "poisonburst", Element: "poison", Icon: 90015, CD: 9, MPCost: 20, Percent: 165, Color: "#a8d46a", UnlockLevel: 4 },
+      { ID: 117, Name: "暗影新星", Kind: "darknova", Element: "dark", Icon: 90021, CD: 11, MPCost: 24, Percent: 185, Color: "#b78bff", UnlockLevel: 6 },
+      { ID: 118, Name: "聖光十字", Kind: "cross", Element: "holy", Icon: 90012, CD: 10, MPCost: 24, Percent: 195, Color: "#ffe9a8", UnlockLevel: 5 },
+      { ID: 119, Name: "雷神之怒", Kind: "thunderstorm", Element: "thunder", Icon: 10051, CD: 14, MPCost: 30, Percent: 170, Color: "#ffe066", UnlockLevel: 8 },
+      { ID: 120, Name: "時空裂縫", Kind: "rift", Element: "arcane", Icon: 10139, CD: 16, MPCost: 32, Percent: 140, Color: "#b78bff", UnlockLevel: 9 },
+      { ID: 121, Name: "流星雨", Kind: "meteorrain", Element: "fire", Icon: 10015, CD: 18, MPCost: 36, Percent: 180, Color: "#ffb15c", UnlockLevel: 10 },
+      { ID: 122, Name: "治癒之泉", Kind: "healzone", Element: "holy", Icon: 90003, CD: 14, MPCost: 24, Percent: 12, Color: "#8fffb0", UnlockLevel: 6 },
+      { ID: 123, Name: "荊棘領域", Kind: "bramble", Element: "nature", Icon: 90036, CD: 12, MPCost: 22, Percent: 120, Color: "#7bd88f", UnlockLevel: 7 },
+      { ID: 124, Name: "元素稜鏡", Kind: "prism", Element: "arcane", Icon: 10049, CD: 13, MPCost: 28, Percent: 175, Color: "#ffd166", UnlockLevel: 8 }
     ],
     Levels: [
       {
@@ -341,10 +353,12 @@
       slowT: 0, slowMul: 1,
       regenT: 0, regen: 0,
       crit: 0, lifesteal: 0, atkCdScale: 1,
+      critDmg: 1.8, areaScale: 1, hpRegen: 0, dodge: 0, execute: 0,
+      multishot: 0, slowOnHit: 0, shieldOnKill: 0, expGain: 1,
       spellCdScale: 1, spellCostScale: 1, shieldPower: 1,
       // 被動能力（升級卡）
-      abilities: { thorn: 0, killBoom: 0, frostAura: 0, holyNova: 0, timeField: 0, guardian: 0, manaFlow: 0, echo: 0, burn: 0, rage: 0 },
-      abilityTimers: { frost: 0, holy: 0, time: 0 },
+      abilities: { thorn: 0, killBoom: 0, frostAura: 0, holyNova: 0, timeField: 0, guardian: 0, manaFlow: 0, echo: 0, burn: 0, rage: 0, lifeBloom: 0, chainNova: 0, meteorMark: 0, arcaneOrbit: 0, frostbite: 0 },
+      abilityTimers: { frost: 0, holy: 0, time: 0, chain: 0, meteor: 0, orbit: 0 },
       guardianUsed: false,
       rageStacks: 0, rageT: 0,
       echoFx: 0
@@ -388,6 +402,7 @@
       floaters: [],
       bullets: [],
       shots: [],
+      pendingHits: [],
       zones: [],
       lasers: [],
       shockwaves: [],
@@ -400,6 +415,8 @@
       roundActive: false,
       spawnQueue: [],
       spawnTimer: 0,
+      trickleT: 0,
+      lastSpawnAt: 0,
       bossActive: null,
       bosses: [],
       paused: false,
@@ -444,10 +461,12 @@
         }
         if (idx < 0) continue;
         var en = spawnEnemy(idx, 1, false, "");
+        if (!en) continue;
         en.x = G.player.x + ((si % cols) - (cols - 1) / 2) * 150;
         en.y = G.player.y - 140 + Math.floor(si / cols) * 140;
         en.spd = 0;
         en.atk = 0;
+        en.spawnFade = 1;
       }
       G.paused = true; // 只做美術預覽，不推進戰鬥
       G.showcase = true;
@@ -465,6 +484,18 @@
       }
     } catch (e) {}
     lastTs = 0;
+    // 除錯掛鉤：只有 ?debug=1 時暴露少量狀態，方便自動化測試
+    try {
+      if (((window.location && window.location.search) || "").indexOf("debug") >= 0) {
+        window.__MOLI_DEBUG = {
+          state: function () { return G; },
+          castSpell: castSpell,
+          levelUp: levelUp,
+          spawnEnemy: spawnEnemy,
+          nextRound: nextRound
+        };
+      }
+    } catch (e) {}
     requestAnimationFrame(frame);
   }
 
@@ -542,6 +573,8 @@
     G.lasers.length = 0;
     G.shockwaves.length = 0;
     G.emitters.length = 0;
+    G.pendingHits.length = 0;
+    G.trickleT = rand(0.8, 1.8);
 
     // 霸主波保留場上殘留的地面效果會太混亂，一併清掉
     if (G.gimmick && G.gimmick.def) G.gimmick.timer = Math.max(6, num(G.gimmick.timer, 10));
@@ -551,6 +584,22 @@
     ids.forEach(function (id) {
       for (var i = 0; i < count; i++) G.spawnQueue.push({ enemyId: num(id, 0), level: num(rd.Level, 1), elite: false });
     });
+
+    // 每波額外增援：從整關怪物池抽樣，增加同波怪物種類與數量
+    var extraIds = rd.ExtraDisturbEnemyIDs || [];
+    var reinforce = Math.max(0, num(rd.ReinforceCount, 0));
+    for (var ri = 0; ri < reinforce && extraIds.length; ri++) {
+      var rid = extraIds[Math.floor(Math.random() * extraIds.length)];
+      G.spawnQueue.push({ enemyId: num(rid, 0), level: num(rd.Level, 1), elite: false });
+    }
+
+    // 洗牌，避免一次只出一種怪
+    for (var qi = G.spawnQueue.length - 1; qi > 0; qi--) {
+      var qj = Math.floor(Math.random() * (qi + 1));
+      var qt = G.spawnQueue[qi];
+      G.spawnQueue[qi] = G.spawnQueue[qj];
+      G.spawnQueue[qj] = qt;
+    }
 
     // 每波指定數量的精英怪（體型更大、帶技能、掉落更多經驗）
     var eliteCount = Math.max(0, num(rd.EliteCount, 0));
@@ -610,12 +659,50 @@
     return 0;
   }
 
-  function atkStyleFor(info, isElite) {
+  // 近戰動作不再只有一種：依 AI、速度與體型分配不同攻擊動作
+  function atkStyleFor(info, isElite, ai) {
     var spd = num(info && info.SPD, 2);
     var tier = num(info && info.Tier, 1);
-    if (isElite || tier >= 4) return Math.random() < 0.5 ? "slam" : "slash";
-    if (spd >= 4.2) return "sting";
-    return Math.random() < 0.5 ? "bite" : "slash";
+    var roll = Math.random();
+    if (ai === "skirmisher" && roll < 0.45) return "spit";
+    if (ai === "support" && roll < 0.3) return "spit";
+    if (isElite || tier >= 4) {
+      if (roll < 0.28) return "slam";
+      if (roll < 0.52) return "combo";
+      if (roll < 0.76) return "claw";
+      return "slash";
+    }
+    if (spd >= 4.2) {
+      if (roll < 0.34) return "sting";
+      if (roll < 0.62) return "combo";
+      if (roll < 0.82) return "claw";
+      return "bite";
+    }
+    if (roll < 0.3) return "bite";
+    if (roll < 0.52) return "slash";
+    if (roll < 0.7) return "claw";
+    if (roll < 0.84) return "sting";
+    return "combo";
+  }
+
+  function walkStyleFor(info, ai) {
+    var spd = num(info && info.SPD, 2);
+    if (ai === "brute" || num(info && info.Tier, 1) >= 5) return "stomp";
+    if (spd >= 4.6) return "hop";
+    if (ai === "circler" || ai === "zigzag") return "sway";
+    if (ai === "skirmisher" || ai === "support") return "glide";
+    return Math.random() < 0.5 ? "stalk" : "sway";
+  }
+
+  function enemyIdByArt(art) {
+    if (!art) return 0;
+    if (!G._artMap) {
+      G._artMap = {};
+      (CONFIG.Enemies || []).forEach(function (en) {
+        if (en.Art) G._artMap[en.Art] = en.ID;
+      });
+    }
+    return num(G._artMap[art], 0);
   }
 
   function spawnEnemy(id, level, isBoss, prefix, bossInfo, elite) {
@@ -695,7 +782,11 @@
       strafe: Math.random() < 0.5 ? -1 : 1,
       dashCd: rand(1.6, 3.6),
       windup: 0,
-      atkStyle: atkStyleFor(info, isElite),
+      atkStyle: atkStyleFor(info, isElite, ai),
+      walkStyle: walkStyleFor(info, ai),
+      spawnFade: 0,
+      spawnFxT: 0.5,
+      hitDelay: 0,
       burnT: 0, burnDps: 0,
       errCount: 0,
       lastHp: maxhp,
@@ -707,6 +798,11 @@
     if (isBoss) {
       G.bossActive = e;
       G.bosses.push(e);
+    } else {
+      // 出生傳送門：讓「持續出怪」有清楚的視覺節奏
+      var pc = e.elite ? "#ffd166" : "#b78bff";
+      pushCapped(G.fx, { type: "portal", x: x, y: y, r: e.r + 8, t: 0.5, max: 0.5, color: pc }, MAX_FX);
+      pushCapped(G.fx, { type: "ring", x: x, y: y, r: e.r, max: e.r * 3.2, t: 0.42, color: pc }, MAX_FX);
     }
     return e;
   }
@@ -738,9 +834,16 @@
   function dealDamage(e, amount, opts) {
     if (!e || e.dying) return 0;
     opts = opts || {};
-    var crit = !opts.noCrit && Math.random() < (G.player.crit || 0);
+    var pl = G.player;
+    var crit = !opts.noCrit && Math.random() < (pl.crit || 0);
     var dmg = Math.max(1, amount - e.def * 0.55);
-    if (crit) dmg *= 1.8;
+    if (crit) dmg *= (pl.critDmg || 1.8);
+    // 斬殺：血量低於門檻的小怪直接處決
+    var executed = false;
+    if (!opts.noExecute && pl.execute > 0 && !e.isBoss && e.hp / e.maxhp <= pl.execute) {
+      dmg = e.hp + 1;
+      executed = true;
+    }
     if (e.shield > 0) {
       var absorb = Math.min(e.shield, dmg);
       e.shield -= absorb;
@@ -750,8 +853,11 @@
     }
     e.hp -= dmg;
     e.hitFlash = 0.12;
+    if (pl.slowOnHit > 0 && !e.isBoss) {
+      e.slowT = Math.max(e.slowT || 0, 1.4);
+      e.slowMul = Math.min(e.slowMul || 1, 1 - pl.slowOnHit);
+    }
     // 烈焰附魔：普攻與魔法命中時點燃小怪
-    var pl = G.player;
     if (pl && pl.abilities && pl.abilities.burn > 0 && !opts.noBurn && !e.isBoss) {
       e.burnT = Math.max(e.burnT || 0, 2.6);
       e.burnDps = Math.max(e.burnDps || 0, pl.atk * 0.16 * pl.abilities.burn);
@@ -765,8 +871,8 @@
     }
     pushCapped(G.floaters, {
       x: e.x, y: e.y - e.r - 6,
-      text: (crit ? "暴擊 " : "") + Math.round(dmg),
-      t: 0.7, color: crit ? "#ffd166" : "#ffe082"
+      text: (executed ? "處決 " : (crit ? "暴擊 " : "")) + Math.round(dmg),
+      t: 0.7, color: executed ? "#ff6b6b" : (crit ? "#ffd166" : "#ffe082")
     }, MAX_FLOATERS);
     if (e.hp <= 0) killEnemy(e);
     return dmg;
@@ -784,6 +890,8 @@
     e.dash = null;
     e.burnT = 0;
     G.kills++;
+    // 死亡後盡快補上新的怪物，維持戰鬥密度
+    if (G.roundActive) G.trickleT = Math.min(G.trickleT, 0.5);
     if (e.isBoss) {
       G.bosses = G.bosses.filter(function (b) { return b !== e; });
       G.bossActive = null;
@@ -809,6 +917,16 @@
         p.rageT = 5;
       }
     }
+    // 擊殺護盾：消滅敵人時獲得短暫護盾
+    if (p.shieldOnKill > 0) {
+      p.shield = Math.max(p.shield, p.maxhp * p.shieldOnKill);
+      p.shieldT = Math.max(p.shieldT || 0, 4.5);
+    }
+    // 死亡時追加的元素爆散，讓擊殺回饋更明顯
+    pushCapped(G.fx, {
+      type: "death", x: e.x, y: e.y - 8, r: e.r, max: e.r * (e.isBoss ? 5 : 2.8),
+      t: 0.45, color: e.isBoss ? "#ffd166" : (e.elite ? "#ffd166" : "#ffb15c")
+    }, MAX_FX);
     var orbs = e.isBoss ? 10 : (e.elite ? 4 : 1);
     for (var oi = 0; oi < orbs; oi++) {
       G.orbs.push({
@@ -826,6 +944,13 @@
   function damagePlayer(amount, color, source) {
     var p = G.player;
     if (p.invT > 0 || p.hp <= 0) return;
+    // 閃避：完全避開一次傷害
+    if (p.dodge > 0 && Math.random() < p.dodge) {
+      p.invT = 0.18;
+      G.floaters.push({ x: p.x, y: p.y - 34, text: "閃避", t: 0.6, color: "#9ff3d6" });
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 16, r: 12, max: 52, t: 0.28, color: "#9ff3d6" }, MAX_FX);
+      return;
+    }
     p.invT = 0.26;
     var raw = Math.max(1, amount - p.def * 0.35);
     // 荊棘之甲：反彈部分近戰傷害
@@ -1142,6 +1267,17 @@
     // 玩家魔法投射物
     for (i = G.shots.length - 1; i >= 0; i--) {
       var s = G.shots[i];
+      // 稜光／追蹤彈會轉向最近的敵人
+      if (s.homing > 0) {
+        var hsT = nearestEnemy(s, 420);
+        if (hsT) {
+          var hdx = hsT.x - s.x, hdy = hsT.y - s.y;
+          var hdd = Math.hypot(hdx, hdy) || 1;
+          var hsp = Math.hypot(s.vx, s.vy) || 1;
+          s.vx += (hdx / hdd * hsp - s.vx) * Math.min(1, s.homing * dt * 3.2);
+          s.vy += (hdy / hdd * hsp - s.vy) * Math.min(1, s.homing * dt * 3.2);
+        }
+      }
       s.x += s.vx * dt;
       s.y += s.vy * dt;
       s.t -= dt;
@@ -1152,9 +1288,17 @@
       var hit = false;
       for (var ei = 0; ei < G.enemies.length; ei++) {
         var en = G.enemies[ei];
-        if (en.dying) continue;
+        if (en.dying || (s.hitSet && s.hitSet.indexOf(en) >= 0)) continue;
         if (dist2(en, s) > (en.r + s.r) * (en.r + s.r)) continue;
         dealDamage(en, s.dmg, { noCrit: true });
+        if (s.slow) {
+          en.slowT = Math.max(en.slowT, 2.2);
+          en.slowMul = Math.min(en.slowMul, 1 - s.slow);
+        }
+        if (s.burn) {
+          en.burnT = Math.max(en.burnT || 0, 2.2);
+          en.burnDps = Math.max(en.burnDps || 0, s.dmg * 0.14);
+        }
         if (s.splash > 0) {
           for (var e2i = 0; e2i < G.enemies.length; e2i++) {
             var en2 = G.enemies[e2i];
@@ -1165,6 +1309,7 @@
           pushCapped(G.fx, { type: "ring", x: en.x, y: en.y, r: 10, max: s.splash, t: 0.35, color: s.color }, MAX_FX);
         }
         pushCapped(G.fx, { type: "spark", x: en.x, y: en.y - 10, t: 0.25, max: 0.25, color: s.color, r: 16 }, MAX_FX);
+        if (s.hitSet) s.hitSet.push(en);
         s.pierce -= 1;
         hit = true;
         if (s.pierce <= 0) break;
@@ -1180,6 +1325,20 @@
       if (z.life <= 0) { G.zones.splice(i, 1); continue; }
       z.tick -= dt;
       if (z.friendly) {
+        if (z.heal) {
+          p.hp = Math.min(p.maxhp, p.hp + z.heal * dt);
+        }
+        if (z.pull) {
+          for (var zp = 0; zp < G.enemies.length; zp++) {
+            var zpe = G.enemies[zp];
+            if (zpe.dying || zpe.isBoss) continue;
+            var zpd2 = dist2(zpe, z);
+            if (zpd2 > z.r * z.r) continue;
+            var zpd = Math.sqrt(zpd2) || 1;
+            zpe.x += (z.x - zpe.x) / zpd * 52 * z.pull * dt;
+            zpe.y += (z.y - zpe.y) / zpd * 52 * z.pull * dt;
+          }
+        }
         if (z.tick <= 0) {
           z.tick = 0.4;
           for (var zi = 0; zi < G.enemies.length; zi++) {
@@ -1272,7 +1431,7 @@
       if (target) {
         p.atkCd = Math.max(0.14, num(atkSkill.CD, 2) * (p.atkCdScale || 1) * (1 - 0.03 * (p.rageStacks || 0)));
         var percent = param(atkSkill, "Percent", 100);
-        var count = Math.max(1, param(atkSkill, "Count", 1));
+        var count = Math.max(1, param(atkSkill, "Count", 1)) + (p.multishot || 0);
         var dmg = p.atk * percent / 100;
         p.attackT = p.attackDur;
         p.dir = dirFromVector(target.x - p.x, target.y - p.y, p.dir);
@@ -1335,6 +1494,7 @@
 
   function damageArea(cx, cy, radius, dmg, color, opts) {
     opts = opts || {};
+    radius = radius * ((G.player && G.player.areaScale) || 1);
     var hit = 0;
     var r2 = radius * radius;
     for (var i = 0; i < G.enemies.length; i++) {
@@ -1365,6 +1525,10 @@
       t: opts.life || 1.7,
       splash: opts.splash || 0,
       pierce: opts.pierce || 1,
+      slow: opts.slow || 0,
+      burn: !!opts.burn,
+      homing: opts.homing || 0,
+      hitSet: [],
       kind: opts.kind || "bolt"
     }, MAX_SHOTS);
   }
@@ -1444,14 +1608,61 @@
         }, MAX_ZONES);
       }
     }
+    // 連鎖新星：定期放出連鎖閃電
+    if (ab.chainNova > 0) {
+      p.abilityTimers.chain -= dt;
+      if (p.abilityTimers.chain <= 0) {
+        var cnTarget = nearestEnemy(p, 480);
+        if (cnTarget) {
+          p.abilityTimers.chain = Math.max(3.2, 6.4 - ab.chainNova * 0.6);
+          var cnTargets = chainTargets(p, cnTarget, 3 + ab.chainNova, 230);
+          var cnPts = [{ x: p.x, y: p.y - 20 }];
+          for (var cn = 0; cn < cnTargets.length; cn++) {
+            dealDamage(cnTargets[cn], p.atk * 0.55 * ab.chainNova * Math.pow(0.85, cn), { noCrit: true });
+            cnPts.push({ x: cnTargets[cn].x, y: cnTargets[cn].y - 12 });
+          }
+          pushCapped(G.fx, { type: "chain", pts: cnPts, t: 0.28, max: 0.28, color: "#ffe066" }, MAX_FX);
+        }
+      }
+    }
+    // 流星印記：定期在敵群中落下流星
+    if (ab.meteorMark > 0) {
+      p.abilityTimers.meteor -= dt;
+      if (p.abilityTimers.meteor <= 0) {
+        var mmTarget = nearestEnemy(p, 560);
+        if (mmTarget) {
+          p.abilityTimers.meteor = Math.max(4.0, 8.0 - ab.meteorMark * 0.8);
+          for (var mm = 0; mm < 1 + ab.meteorMark; mm++) {
+            pushCapped(G.zones, {
+              x: clamp(mmTarget.x + rand(-80, 80), 40, G.worldW - 40),
+              y: clamp(mmTarget.y + rand(-80, 80), 40, G.worldH - 40),
+              r: 58, delay: 0.7 + mm * 0.12, life: 0.32, max: 0.32,
+              dps: p.atk * 1.2 * ab.meteorMark, color: "#ffb15c", meteor: true, friendly: true, tick: 0
+            }, MAX_ZONES);
+          }
+        }
+      }
+    }
+    // 奧術環繞：貼身持續切割，並有環繞光球視覺
+    if (ab.arcaneOrbit > 0) {
+      p.abilityTimers.orbit -= dt;
+      if (p.abilityTimers.orbit <= 0) {
+        p.abilityTimers.orbit = 0.5;
+        var orbR = 82 + ab.arcaneOrbit * 14;
+        damageArea(p.x, p.y, orbR, p.atk * 0.22 * ab.arcaneOrbit, "#9fd8ff", {});
+        pushCapped(G.fx, { type: "orbit", x: p.x, y: p.y - 10, r: orbR, t: 0.5, max: 0.5, color: "#9fd8ff" }, MAX_FX);
+      }
+    }
   }
 
   function shouldAutoCast(sk) {
     var p = G.player;
     if (!sk) return false;
     if (sk.Kind === "heal") return p.hp < p.maxhp * 0.9;
+    if (sk.Kind === "healzone") return p.hp < p.maxhp * 0.82;
     if (sk.Kind === "shield") return p.shield <= 0;
     if (sk.Kind === "drain") return nearestEnemy(p, 470) !== null;
+    if (sk.Kind === "darknova") return nearestEnemy(p, 300) !== null;
     var range = sk.Kind === "frost" ? 300 : 560;
     return nearestEnemy(p, range) !== null;
   }
@@ -1578,6 +1789,138 @@
         }, MAX_ZONES);
       }
       did = true;
+    } else if (sk.Kind === "iceshard") {
+      if (!target) return false;
+      var isAng = Math.atan2(target.y - p.y, target.x - p.x);
+      p.dir = dirFromVector(target.x - p.x, target.y - p.y, p.dir);
+      for (var isi = -1; isi <= 1; isi++) {
+        spawnShot(p.x, p.y - 22, isAng + isi * 0.1, 640, power * (isi === 0 ? 1 : 0.72), color,
+          { pierce: isi === 0 ? 3 : 2, r: 9, kind: "ice", life: 1.4, slow: 0.45 });
+      }
+      pushCapped(G.fx, { type: "cast", x: p.x, y: p.y - 20, t: 0.28, max: 0.28, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "flame") {
+      if (!target) return false;
+      var flAng = Math.atan2(target.y - p.y, target.x - p.x);
+      p.dir = dirFromVector(target.x - p.x, target.y - p.y, p.dir);
+      for (var fi = 0; fi < 9; fi++) {
+        spawnShot(p.x, p.y - 20, flAng + rand(-0.3, 0.3), rand(230, 390), power * 0.3, color,
+          { pierce: 4, r: 11 + Math.random() * 6, kind: "flame", life: 0.62, burn: true });
+      }
+      pushCapped(G.fx, { type: "flamewave", x: p.x, y: p.y - 18, ang: flAng, r: 95, t: 0.32, max: 0.32, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "storm") {
+      if (!target) return false;
+      pushCapped(G.zones, {
+        x: target.x, y: target.y, r: 150 * (p.areaScale || 1), delay: 0, life: 4.2, max: 4.2,
+        dps: power * 0.42, color: color, friendly: true, tick: 0, slow: 0.35, kind: "storm", pull: 0.3
+      }, MAX_ZONES);
+      pushCapped(G.fx, { type: "ring", x: target.x, y: target.y, r: 20, max: 180, t: 0.5, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "vortex", x: target.x, y: target.y, r: 150, t: 0.8, max: 0.8, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "poisonburst") {
+      if (!target) return false;
+      damageArea(target.x, target.y, 125, power, color, { slow: 0.3, slowT: 2.2 });
+      pushCapped(G.zones, {
+        x: target.x, y: target.y, r: 118 * (p.areaScale || 1), delay: 0, life: 4.2, max: 4.2,
+        dps: power * 0.42, color: color, friendly: true, tick: 0, slow: 0.2, kind: "poison"
+      }, MAX_ZONES);
+      pushCapped(G.fx, { type: "spark", x: target.x, y: target.y - 8, r: 42, t: 0.34, max: 0.34, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "darknova") {
+      damageArea(p.x, p.y, 310, power, color, { slow: 0.45, slowT: 2.6 });
+      pushCapped(G.fx, { type: "void", x: p.x, y: p.y - 10, r: 320, t: 0.55, max: 0.55, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 10, r: 24, max: 340, t: 0.55, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "cross") {
+      if (!target) return false;
+      var ca = Math.atan2(target.y - p.y, target.x - p.x);
+      var cux = Math.cos(ca), cuy = Math.sin(ca);
+      var clen = 390 * (p.areaScale || 1), cw = 46 * (p.areaScale || 1);
+      var cHits = 0;
+      var cSnap = G.enemies.slice();
+      for (var csi = 0; csi < cSnap.length; csi++) {
+        var ce = cSnap[csi];
+        if (ce.dying) continue;
+        var cdx = ce.x - target.x, cdy = ce.y - target.y;
+        var along = cdx * cux + cdy * cuy;
+        var perp = -cdx * cuy + cdy * cux;
+        if ((Math.abs(along) < clen && Math.abs(perp) < cw) ||
+            (Math.abs(along) < cw && Math.abs(perp) < clen)) {
+          dealDamage(ce, power, { noCrit: true });
+          cHits++;
+        }
+      }
+      pushCapped(G.fx, { type: "cross", x: target.x, y: target.y - 8, ang: ca, r: clen, t: 0.5, max: 0.5, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "ring", x: target.x, y: target.y, r: 16, max: cw * 2, t: 0.4, color: color }, MAX_FX);
+      if (cHits > 0) did = true;
+      did = true;
+    } else if (sk.Kind === "thunderstorm") {
+      if (!target) return false;
+      for (var ti = 0; ti < 10; ti++) {
+        var tAng = Math.random() * Math.PI * 2;
+        var tRad = rand(0, 190) * (p.areaScale || 1);
+        pushCapped(G.zones, {
+          x: clamp(target.x + Math.cos(tAng) * tRad, 40, G.worldW - 40),
+          y: clamp(target.y + Math.sin(tAng) * tRad, 40, G.worldH - 40),
+          r: 48 * (p.areaScale || 1), delay: 0.22 + ti * 0.075, life: 0.3, max: 0.3,
+          dps: power * 2.2, color: color, meteor: true, friendly: true, tick: 0, kind: "lightning"
+        }, MAX_ZONES);
+      }
+      pushCapped(G.fx, { type: "lightning", x: target.x, y: target.y - 8, r: 60, t: 0.4, max: 0.4, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "rift") {
+      if (!target) return false;
+      pushCapped(G.zones, {
+        x: target.x, y: target.y, r: 140 * (p.areaScale || 1), delay: 0, life: 3.1, max: 3.1,
+        dps: power * 0.55, color: color, friendly: true, tick: 0, slow: 0.2, kind: "rift", pull: 0.7
+      }, MAX_ZONES);
+      pushCapped(G.fx, { type: "void", x: target.x, y: target.y - 6, r: 150, t: 0.7, max: 0.7, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "ring", x: target.x, y: target.y, r: 12, max: 220, t: 0.6, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "meteorrain") {
+      if (!target) return false;
+      for (var mri = 0; mri < 14; mri++) {
+        pushCapped(G.zones, {
+          x: clamp(target.x + rand(-300, 300) * (p.areaScale || 1), 40, G.worldW - 40),
+          y: clamp(target.y + rand(-300, 300) * (p.areaScale || 1), 40, G.worldH - 40),
+          r: 58, delay: 0.35 + mri * 0.09, life: 0.32, max: 0.32,
+          dps: power * 1.7, color: color, meteor: true, friendly: true, tick: 0
+        }, MAX_ZONES);
+      }
+      pushCapped(G.fx, { type: "ring", x: target.x, y: target.y, r: 30, max: 360, t: 0.7, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "healzone") {
+      var hzR = 135 * (p.areaScale || 1);
+      pushCapped(G.zones, {
+        x: p.x, y: p.y, r: hzR, delay: 0, life: 5, max: 5,
+        dps: 0, color: color, friendly: true, tick: 0, kind: "heal",
+        heal: p.maxhp * num(sk.Percent, 12) / 100 / 4
+      }, MAX_ZONES);
+      p.hp = Math.min(p.maxhp, p.hp + p.maxhp * 0.05);
+      pushCapped(G.floaters, { x: p.x, y: p.y - 46, text: "+" + Math.round(p.maxhp * 0.05), t: 0.8, color: "#8fffb0" }, MAX_FLOATERS);
+      pushCapped(G.fx, { type: "ring", x: p.x, y: p.y - 12, r: 20, max: hzR, t: 0.55, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "bramble") {
+      if (!target) return false;
+      damageArea(target.x, target.y, 145, power, color, { slow: 0.55, slowT: 2.8, stun: 0.5 });
+      pushCapped(G.zones, {
+        x: target.x, y: target.y, r: 140 * (p.areaScale || 1), delay: 0, life: 4.4, max: 4.4,
+        dps: power * 0.36, color: color, friendly: true, tick: 0, slow: 0.35, kind: "bramble"
+      }, MAX_ZONES);
+      pushCapped(G.fx, { type: "spikes", x: target.x, y: target.y, r: 150 * (p.areaScale || 1), t: 0.5, max: 0.5, color: color }, MAX_FX);
+      did = true;
+    } else if (sk.Kind === "prism") {
+      if (!target) return false;
+      var prAng = Math.atan2(target.y - p.y, target.x - p.x);
+      p.dir = dirFromVector(target.x - p.x, target.y - p.y, p.dir);
+      var prColors = ["#ff8a3d", "#9fe8ff", "#ffe066", "#b78bff", "#8fffb0", "#ff9bd2"];
+      for (var pri = 0; pri < 6; pri++) {
+        spawnShot(p.x, p.y - 22, prAng + (pri - 2.5) * 0.085, 560, power * 0.42, prColors[pri % prColors.length],
+          { pierce: 3, r: 8, kind: "prism", life: 1.9, homing: 0.9 });
+      }
+      pushCapped(G.fx, { type: "cast", x: p.x, y: p.y - 22, t: 0.35, max: 0.35, color: color }, MAX_FX);
+      did = true;
     }
 
     if (did) {
@@ -1659,6 +2002,12 @@
       p.regenT -= dt;
       p.hp = Math.min(p.maxhp, p.hp + p.regen * dt);
     }
+    if (p.hpRegen > 0) {
+      p.hp = Math.min(p.maxhp, p.hp + p.hpRegen * dt);
+    }
+    if (p.abilities && p.abilities.lifeBloom > 0) {
+      p.hp = Math.min(p.maxhp, p.hp + p.maxhp * 0.004 * p.abilities.lifeBloom * dt);
+    }
 
     p.attackT = Math.max(0, p.attackT - dt);
     p.hitFlash = Math.max(0, p.hitFlash - dt);
@@ -1682,7 +2031,7 @@
 
   function gainExp(v) {
     var p = G.player;
-    p.exp += v;
+    p.exp += v * (p.expGain || 1);
     while (p.exp >= p.nextExp) {
       p.exp -= p.nextExp;
       p.level++;
@@ -1726,7 +2075,16 @@
     { name: "咒力", desc: "魔法傷害 +16%", icon: 10028, apply: function (p) { p.spellPower = (p.spellPower || 1) * 1.16; } },
     { name: "詠唱加速", desc: "魔法冷卻 -10%", icon: 10139, apply: function (p) { p.spellCdScale = (p.spellCdScale || 1) * 0.9; } },
     { name: "元素精通", desc: "魔法傷害 +10%，魔力消耗 -8%", icon: 10049, apply: function (p) { p.spellPower = (p.spellPower || 1) * 1.1; p.spellCostScale = (p.spellCostScale || 1) * 0.92; } },
-    { name: "聖盾強化", desc: "護盾效果 +30%", icon: 90036, apply: function (p) { p.shieldPower = (p.shieldPower || 1) * 1.3; } }
+    { name: "聖盾強化", desc: "護盾效果 +30%", icon: 90036, apply: function (p) { p.shieldPower = (p.shieldPower || 1) * 1.3; } },
+    { name: "暴擊傷害", desc: "暴擊傷害 +30%", icon: 10112, apply: function (p) { p.critDmg = (p.critDmg || 1.8) + 0.3; } },
+    { name: "術法範圍", desc: "所有技能範圍 +12%", icon: 10049, apply: function (p) { p.areaScale = (p.areaScale || 1) * 1.12; } },
+    { name: "生命回復", desc: "每秒回復 0.9 生命", icon: 90003, apply: function (p) { p.hpRegen = (p.hpRegen || 0) + 0.9; } },
+    { name: "閃避", desc: "閃避率 +5%（上限 50%）", icon: 10111, apply: function (p) { p.dodge = Math.min(0.5, (p.dodge || 0) + 0.05); } },
+    { name: "斬殺", desc: "敵人生命低於 6% 時直接處決（上限 30%）", icon: 90021, apply: function (p) { p.execute = Math.min(0.3, (p.execute || 0) + 0.06); } },
+    { name: "多重射擊", desc: "普通攻擊額外命中 1 個目標（最多 +3）", icon: 10028, apply: function (p) { p.multishot = Math.min(3, (p.multishot || 0) + 1); } },
+    { name: "冰緩打擊", desc: "命中使敵人減速 8%（上限 50%）", icon: 10045, apply: function (p) { p.slowOnHit = Math.min(0.5, (p.slowOnHit || 0) + 0.08); } },
+    { name: "擊殺護盾", desc: "擊殺敵人獲得 2% 最大生命護盾", icon: 90036, apply: function (p) { p.shieldOnKill = (p.shieldOnKill || 0) + 0.02; } },
+    { name: "經驗加成", desc: "獲得的經驗值 +16%", icon: 30075, apply: function (p) { p.expGain = (p.expGain || 1) * 1.16; } }
   ];
 
   // 升級時可取得的被動能力（與純數值卡區隔）
@@ -1751,8 +2109,40 @@
       desc: function () { return "最大魔力 +10%，魔力回復 +15%"; },
       onApply: function (p) { p.maxmp *= 1.1; p.mpRegen *= 1.15; p.mp = Math.min(p.maxmp, p.mp + p.maxmp * 0.1); } },
     { key: "guardian", name: "守護天使", icon: 90003, max: 1,
-      desc: function () { return "每場一次，瀕死時以 50% 生命復活並獲得護盾"; } }
+      desc: function () { return "每場一次，瀕死時以 50% 生命復活並獲得護盾"; } },
+    { key: "lifeBloom", name: "生命綻放", icon: 90003, max: 3,
+      desc: function (r) { return "每秒回復 " + (0.4 * r).toFixed(1) + "% 最大生命"; } },
+    { key: "chainNova", name: "連鎖新星", icon: 10051, max: 3,
+      desc: function (r) { return "每 " + (6.4 - r * 0.6).toFixed(1) + " 秒釋放連鎖閃電，跳躍 " + (3 + r) + " 個目標"; } },
+    { key: "meteorMark", name: "流星印記", icon: 10015, max: 3,
+      desc: function (r) { return "每 " + (8.0 - r * 0.8).toFixed(1) + " 秒在敵群降下 " + (1 + r) + " 顆流星"; } },
+    { key: "arcaneOrbit", name: "奧術環繞", icon: 10139, max: 3,
+      desc: function (r) { return "每 0.5 秒以奧術光環切割身邊敵人，半徑 " + (82 + r * 14) + ""; } }
   ];
+
+  // 升級時可以「新學」的魔法：書本最多 9 格，讓每局 Build 不同
+  var NEW_SPELL_IDS = [113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124];
+
+  function newSpellCard(sk) {
+    return {
+      type: "新魔法",
+      name: sk.Name,
+      icon: sk.Icon,
+      desc: (sk.Desc || "獲得新的主動魔法。") + "（魔法書 " + (G.player.spells.length + 1) + "/9）",
+      apply: function (p) {
+        if (p.spells.length >= 9) return;
+        p.spells.push({
+          id: sk.ID,
+          index: p.spells.length,
+          cd: 0.8,
+          cdMax: Math.max(1, num(sk.CD, 6)),
+          unlock: 1,
+          rank: 1
+        });
+        buildSkillBar();
+      }
+    };
+  }
 
   function spellRankCard(slot, sk) {
     var next = Math.min(SPELL_RANK_MAX, (slot.rank || 1) + 1);
@@ -1789,6 +2179,16 @@
       var sk = skillById(slot.id);
       if (sk) magic.push(spellRankCard(slot, sk));
     });
+    var newSpells = [];
+    if (p.spells.length < 9) {
+      var owned = {};
+      p.spells.forEach(function (s) { owned[s.id] = 1; });
+      NEW_SPELL_IDS.forEach(function (id) {
+        if (owned[id]) return;
+        var sk = skillById(id);
+        if (sk) newSpells.push(newSpellCard(sk));
+      });
+    }
     var abilities = [];
     ABILITY_UPGRADES.forEach(function (a) {
       var rank = (p.abilities && p.abilities[a.key]) || 0;
@@ -1797,14 +2197,15 @@
     var stats = STAT_UPGRADES.map(function (u) {
       return { type: "屬性", name: u.name, desc: u.desc, icon: u.icon, apply: u.apply };
     });
-    var special = magic.concat(abilities);
+    var special = magic.concat(abilities).concat(newSpells);
     var picks = [];
-    // 至少保證一張魔法／能力卡，讓升級不是只有數值
-    if (special.length) {
+    // 至少兩張魔法／能力卡，讓每次升級都能選到新玩法
+    var guarantee = Math.min(2, special.length);
+    for (var g = 0; g < guarantee; g++) {
       picks.push(special.splice(Math.floor(Math.random() * special.length), 1)[0]);
     }
     var rest = special.concat(stats);
-    while (picks.length < 3 && rest.length) {
+    while (picks.length < 4 && rest.length) {
       picks.push(rest.splice(Math.floor(Math.random() * rest.length), 1)[0]);
     }
     return picks;
@@ -1819,7 +2220,7 @@
     for (var i = 0; i < picks.length; i++) {
       (function (u) {
         var d = document.createElement("div");
-        d.className = "card upgrade" + (u.type === "魔法" ? " t-magic" : (u.type === "能力" ? " t-ability" : " t-stat"));
+        d.className = "card upgrade" + (u.type === "魔法" || u.type === "新魔法" ? " t-magic" : (u.type === "能力" ? " t-ability" : " t-stat"));
         d.innerHTML = '<span class="tag"></span><img class="ico" alt=""><div class="name"></div><div class="desc"></div>';
         d.querySelector(".tag").textContent = u.type || "屬性";
         var icoEl = d.querySelector("img.ico");
@@ -2064,14 +2465,106 @@
     return { vx: vx, vy: vy, moving: true };
   }
 
-  function enemyMeleeFx(e, ang) {
+  function enemyMeleeFx(e, ang, phase, style) {
+    style = style || e.atkStyle || "slash";
     var color = e.elite ? "#ffd166" : "#ffb15c";
-    if (e.atkStyle === "slam") {
-      pushCapped(G.fx, { type: "ring", x: e.x + Math.cos(ang) * 16, y: e.y + Math.sin(ang) * 16, r: 10, max: 58, t: 0.28, color: color }, MAX_FX);
-    } else if (e.atkStyle === "sting") {
-      pushCapped(G.fx, { type: "slash", x: e.x + Math.cos(ang) * 10, y: e.y - 8 + Math.sin(ang) * 10, r: e.r + 16, t: 0.16, color: "#ffe066" }, MAX_FX);
+    var hx = e.x + Math.cos(ang) * (e.r + 6);
+    var hy = e.y - 8 + Math.sin(ang) * (e.r + 6);
+    if (phase === "wind") {
+      if (style === "slam") {
+        pushCapped(G.fx, { type: "tell", x: hx, y: hy, r: e.r + 30, t: 0.3, max: 0.3, color: "#ff9b6a" }, MAX_FX);
+      } else if (style === "spit") {
+        pushCapped(G.fx, { type: "spark", x: e.x + Math.cos(ang) * 14, y: e.y - 26, r: 14, t: 0.28, max: 0.28, color: "#c9b3ff" }, MAX_FX);
+      } else {
+        pushCapped(G.fx, { type: "slash", x: hx, y: hy, r: e.r + 20, t: 0.2, max: 0.2, color: hexA(color, 0.85) }, MAX_FX);
+      }
+      return;
+    }
+    if (style === "slam") {
+      pushCapped(G.fx, { type: "ring", x: hx, y: hy + 6, r: 10, max: 66, t: 0.3, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "dust", x: hx, y: hy + 8, r: 42, t: 0.35, max: 0.35, color: "#d8c39a" }, MAX_FX);
+    } else if (style === "sting") {
+      pushCapped(G.fx, { type: "slash", x: hx, y: hy, r: e.r + 24, t: 0.16, color: "#ffe066" }, MAX_FX);
+    } else if (style === "claw") {
+      for (var ci = -1; ci <= 1; ci++) {
+        pushCapped(G.fx, { type: "slash", x: hx + ci * 7, y: hy + ci * 3, r: e.r + 18, t: 0.18, color: color }, MAX_FX);
+      }
+    } else if (style === "combo") {
+      pushCapped(G.fx, { type: "slash", x: hx, y: hy, r: e.r + 16, t: 0.15, color: "#ffd166" }, MAX_FX);
+    } else if (style === "spit") {
+      pushCapped(G.fx, { type: "spark", x: e.x + Math.cos(ang) * 18, y: e.y - 26, r: 20, t: 0.24, max: 0.24, color: "#c9b3ff" }, MAX_FX);
     } else {
-      pushCapped(G.fx, { type: "slash", x: e.x + Math.cos(ang) * 12, y: e.y - 10 + Math.sin(ang) * 12, r: e.r + 18, t: 0.18, color: color }, MAX_FX);
+      pushCapped(G.fx, { type: "slash", x: hx, y: hy, r: e.r + 20, t: 0.18, color: color }, MAX_FX);
+    }
+  }
+
+  function enemyAtkReach(e) {
+    var style = e.atkStyle || "slash";
+    if (style === "spit") return 270;
+    if (style === "slam") return 58;
+    if (style === "combo") return 50;
+    if (style === "claw") return 48;
+    if (style === "sting") return 44;
+    return 46;
+  }
+
+  // 攻擊起手 → 延遲命中，讓玩家看得到動作，也能靠走位躲開
+  function startEnemyMelee(e, ang) {
+    var style = e.atkStyle || "slash";
+    var base = e.atk * (e.atkBuff || 1);
+    var reach = enemyAtkReach(e);
+    e.face = G.player.x >= e.x ? 1 : -1;
+    e.state = "attack";
+    e.stateT = style === "combo" ? 0.56 : 0.48;
+    enemyMeleeFx(e, ang, "wind", style);
+
+    if (style === "spit") {
+      G.pendingHits.push({ e: e, t: 0.36, style: "spit", ang: ang, dmg: base * 0.9, range: 0 });
+      e.atkCd = 1.9 + rand(0.3, 0.7);
+      return;
+    }
+    if (style === "combo") {
+      for (var ci = 0; ci < 3; ci++) {
+        G.pendingHits.push({
+          e: e, t: 0.16 + ci * 0.13, style: "combo", ang: ang + (ci - 1) * 0.18,
+          dmg: base * 0.44, range: reach + 16
+        });
+      }
+      e.atkCd = 1.8 + rand(0.25, 0.6);
+      return;
+    }
+    var mult = style === "slam" ? 1.3 : (style === "sting" ? 0.95 : (style === "claw" ? 0.9 : 1));
+    var delay = style === "slam" ? 0.32 : 0.2;
+    G.pendingHits.push({
+      e: e, t: delay, style: style, ang: ang,
+      dmg: base * mult, range: reach + 18
+    });
+    e.atkCd = (e.elite ? 0.95 : 1.15) + rand(-0.12, 0.25);
+  }
+
+  function updatePendingHits(dt) {
+    var p = G.player;
+    for (var i = G.pendingHits.length - 1; i >= 0; i--) {
+      var h = G.pendingHits[i];
+      if (!h.e || h.e.dying || h.e.hp <= 0) { G.pendingHits.splice(i, 1); continue; }
+      h.t -= dt;
+      if (h.t > 0) continue;
+      var e = h.e;
+      if (h.style === "spit") {
+        var sa = Math.atan2(p.y - e.y, p.x - e.x);
+        addBullet(e.x, e.y - 30, sa, 280, h.dmg, "#c9b3ff", 8,
+          { life: 3.4, slow: e.elite ? 0.25 : 0, homing: 0.12 });
+        e.state = "special";
+        e.stateT = 0.22;
+      } else {
+        var d = Math.hypot(p.x - e.x, p.y - e.y);
+        if (d <= h.range) {
+          damagePlayer(h.dmg, "#ff7b7b", e);
+          if (G.over) { G.pendingHits.splice(i, 1); return; }
+        }
+      }
+      enemyMeleeFx(e, h.ang, "hit", h.style);
+      G.pendingHits.splice(i, 1);
     }
   }
 
@@ -2088,6 +2581,10 @@
         if (e.dieT <= 0) G.enemies.splice(i, 1);
         continue;
       }
+
+      // 出生淡入與傳送門殘光
+      if (e.spawnFade < 1) e.spawnFade = Math.min(1, e.spawnFade + dt * 3.6);
+      if (e.spawnFxT > 0) e.spawnFxT -= dt;
 
       // 霸主衝撞由 updateBosses() 控制位移；小怪衝鋒在此處理
       if (e.dash) {
@@ -2182,16 +2679,13 @@
         e.y = clamp(e.y + steer.vy * dt, e.r, G.worldH - e.r);
         if (e.stateT <= 0) e.state = "walk";
       }
-      if (d <= e.r + p.r + 4) {
+      var atkReach = enemyAtkReach(e);
+      if (d <= atkReach + p.r) {
         if (e.stateT <= 0) e.state = "idle";
         e.atkCd -= dt;
         if (e.atkCd <= 0) {
-          e.atkCd = (e.elite ? 0.95 : 1.1) + rand(-0.15, 0.2);
-          e.state = "attack";
-          e.stateT = 0.45;
           var meleeAng = Math.atan2(dy, dx);
-          enemyMeleeFx(e, meleeAng);
-          damagePlayer(e.atk * (e.atkBuff || 1), "#ff7b7b", e);
+          startEnemyMelee(e, meleeAng);
           if (G.over) return;
         }
       }
@@ -2302,38 +2796,124 @@
     }
   }
 
+  function countAliveEnemies() {
+    var alive = 0, bossAlive = 0, bossDying = 0;
+    for (var i = 0; i < G.enemies.length; i++) {
+      var e = G.enemies[i];
+      if (e.dying) { if (e.isBoss) bossDying++; continue; }
+      if (e.isBoss) bossAlive++; else alive++;
+    }
+    return { alive: alive, bossAlive: bossAlive, bossDying: bossDying };
+  }
+
+  function roundEnemyPool(rd) {
+    var poolKey = G.roundIndex + "|" + (G.levelName || "");
+    if (G._poolKey === poolKey && G._pool) return G._pool;
+    var ids = [];
+    var seen = {};
+    function add(id) {
+      id = num(id, 0);
+      if (!id || seen[id]) return;
+      seen[id] = 1;
+      ids.push(id);
+    }
+    (rd.EnemyIDs || []).forEach(add);
+    (rd.ExtraDisturbEnemyIDs || []).forEach(add);
+    // 從整關怪物池再抽一些不同種類，讓同一波不會永遠只有那幾種怪
+    (G.level.MonsterIDs || []).forEach(function (art) {
+      add(enemyIdByArt(art));
+    });
+    G._poolKey = poolKey;
+    G._pool = ids;
+    return ids;
+  }
+
   function updateWaves(dt) {
-    if (!G.roundActive) return;
+    if (G.over) return;
     var rd = (G.level.RoundInfos || [])[G.roundIndex];
     if (!rd) return;
 
-    if (G.spawnQueue.length) {
-      G.spawnTimer -= dt;
-      if (G.spawnTimer <= 0) {
-        G.spawnTimer = 0.22;
-        var s = G.spawnQueue.shift();
-        spawnEnemy(s.enemyId, s.level, false, "", null, !!s.elite);
-      }
-    }
-
-    var infinite = num(rd.Duration, 0) < 0;
-    if (infinite) {
-      if (!G.spawnQueue.length && G.enemies.length === 0) {
-        G.roundActive = false;
-        nextRound();
+    // 等待殘存怪物被清光後再進下一波
+    if (!G.roundActive) {
+      if (G.roundWait) {
+        var waitState = countAliveEnemies();
+        if (!G.spawnQueue.length && waitState.alive === 0 && waitState.bossAlive === 0) {
+          G.roundWait = false;
+          nextRound();
+        }
       }
       return;
     }
 
-    G.roundTimer -= dt;
-    if (G.roundTimer <= 0) {
-      G.roundActive = false;
-      if (G.enemies.length === 0 || !G.spawnQueue.length) nextRound();
-      else G.roundWait = true;
+    var bosses = rd.BossInfos || [];
+    var infinite = num(rd.Duration, 0) < 0;
+    var difficulty = num(G.level.Difficulty, 1);
+    // 場上同時存活上限：避免一次把整波倒出來，讓戰鬥節奏保持連續
+    var fieldMax = bosses.length ? 18 : Math.min(MAX_ENEMIES - 2, 8 + Math.floor(difficulty * 1.15));
+
+    // 先處理這一波原有的生成佇列（場上還有空間才繼續出）
+    var fieldNow = countAliveEnemies();
+    var fieldUsed = fieldNow.alive + fieldNow.bossAlive;
+    if (G.spawnQueue.length && fieldUsed < fieldMax) {
+      G.spawnTimer -= dt;
+      if (G.spawnTimer <= 0) {
+        G.spawnTimer = Math.max(0.16, 0.3 - difficulty * 0.008);
+        var batch = 1 + Math.floor(difficulty / 7);
+        for (var bi = 0; bi < batch && G.spawnQueue.length && fieldUsed < fieldMax; bi++) {
+          var s = G.spawnQueue[0];
+          var spawned = spawnEnemy(s.enemyId, s.level, false, "", null, !!s.elite);
+          if (!spawned) break;
+          G.spawnQueue.shift();
+          fieldUsed++;
+        }
+      }
     }
-    if (G.roundWait && G.enemies.length === 0) {
+
+    // 霸主波不再無限補怪；普通波在時間結束前會持續補充，讓怪物「死掉就繼續出」
+    var canTrickle = bosses.length === 0 && (infinite || G.roundTimer > 2.2);
+
+    if (canTrickle) {
+      var state = countAliveEnemies();
+      var targetAlive = Math.min(fieldMax - 2, 5 + Math.floor(difficulty * 0.75) + (difficulty >= 10 ? 2 : 0));
+      var supply = state.alive + G.spawnQueue.length;
+      if (supply < targetAlive) {
+        G.trickleT -= dt;
+        if (G.trickleT <= 0) {
+          var pool = roundEnemyPool(rd);
+          var spawnN = Math.min(targetAlive - supply, 1 + Math.floor(Math.random() * 2) + (difficulty >= 10 ? 1 : 0));
+          for (var ti = 0; ti < spawnN; ti++) {
+            if (!pool.length) break;
+            var tid = pool[Math.floor(Math.random() * pool.length)];
+            var isElite = difficulty >= 6 && Math.random() < 0.03 + difficulty * 0.003;
+            var tlv = num(rd.Level, 1) + (Math.random() < 0.18 ? 1 : 0);
+            if (!spawnEnemy(tid, tlv, false, "", null, isElite)) break;
+          }
+          G.trickleT = Math.max(0.32, 1.45 - difficulty * 0.055) * rand(0.8, 1.2);
+        }
+      } else {
+        G.trickleT = Math.max(G.trickleT, 0.4);
+      }
+    }
+
+    // 沒有待生成怪物、場上也全清空 → 立刻下一波
+    var now = countAliveEnemies();
+    if (!G.spawnQueue.length && now.alive === 0 && now.bossAlive === 0 && now.bossDying === 0) {
+      G.roundActive = false;
       G.roundWait = false;
       nextRound();
+      return;
+    }
+
+    if (infinite) return;
+
+    G.roundTimer -= dt;
+    if (G.roundTimer <= 0) {
+      G.roundTimer = 0;
+      G.roundActive = false;
+      // 時間到後不再保留未生成的增援，避免殘留佇列造成卡關
+      G.spawnQueue.length = 0;
+      if (!G.spawnQueue.length && now.alive === 0 && now.bossAlive === 0) nextRound();
+      else G.roundWait = true;
     }
   }
 
@@ -2585,7 +3165,7 @@
       var cp = 1 - clamp(e.casting.t / e.casting.max, 0, 1);
       ctx.fillStyle = "rgba(0,0,0,0.55)";
       ctx.fillRect(sx - w / 2, barY - 7, w, 3);
-      ctx.fillStyle = e.casting.sk.Color || "#b78bff";
+      ctx.fillStyle = (e.casting.sk && e.casting.sk.Color) || "#b78bff";
       ctx.fillRect(sx - w / 2, barY - 7, w * cp, 3);
     }
 
@@ -2636,6 +3216,74 @@
           ctx.beginPath(); ctx.arc(0, 0, z.r * 0.72, 0, Math.PI * 2); ctx.stroke();
           ctx.setLineDash([]);
         }
+        if (z.kind === "heal") {
+          ctx.globalAlpha = 0.65 + 0.25 * Math.sin(G.time * 5);
+          ctx.strokeStyle = "#b6ffd0";
+          ctx.lineWidth = 3;
+          var hpulse = 0.4 + 0.3 * Math.abs(Math.sin(G.time * 2.4));
+          ctx.beginPath(); ctx.arc(0, 0, z.r * hpulse, 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = "rgba(143,255,176,0.85)";
+          for (var hpi = 0; hpi < 4; hpi++) {
+            var ha = G.time * 1.5 + hpi * Math.PI / 2;
+            var hr = z.r * (0.3 + 0.4 * hpi / 4);
+            ctx.fillRect(Math.cos(ha) * hr - 3, Math.sin(ha) * hr * 0.6 - 12, 6, 20);
+            ctx.fillRect(Math.cos(ha) * hr - 10, Math.sin(ha) * hr * 0.6 - 5, 20, 6);
+          }
+        } else if (z.kind === "storm" || z.kind === "rift") {
+          ctx.globalAlpha = 0.75;
+          ctx.strokeStyle = z.kind === "rift" ? "#d9b8ff" : "#d6fff0";
+          ctx.lineWidth = 2;
+          for (var za = 0; za < 5; za++) {
+            ctx.beginPath();
+            for (var zz = 0; zz <= 18; zz++) {
+              var zr = z.r * (0.1 + zz / 18 * 0.88);
+              var zang = zz * 0.42 + G.time * (z.kind === "rift" ? -5 : 5) + za * Math.PI * 2 / 5;
+              var zx = Math.cos(zang) * zr, zy = Math.sin(zang) * zr * 0.78;
+              if (zz === 0) ctx.moveTo(zx, zy); else ctx.lineTo(zx, zy);
+            }
+            ctx.stroke();
+          }
+          if (z.kind === "rift") {
+            var rg = ctx.createRadialGradient(0, 0, 2, 0, 0, z.r * 0.55);
+            rg.addColorStop(0, "rgba(10,2,24,0.95)");
+            rg.addColorStop(1, hexA(z.color, 0));
+            ctx.fillStyle = rg;
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath(); ctx.arc(0, 0, z.r * 0.55, 0, Math.PI * 2); ctx.fill();
+          }
+        } else if (z.kind === "bramble") {
+          ctx.globalAlpha = 0.55;
+          ctx.fillStyle = "#7bd88f";
+          ctx.strokeStyle = "rgba(20,50,20,0.7)";
+          ctx.lineWidth = 1.5;
+          for (var bb = 0; bb < 18; bb++) {
+            var ba = bb / 18 * Math.PI * 2 + G.time * 0.25;
+            var br = z.r * (0.2 + 0.72 * ((bb * 29) % 10) / 10);
+            var bxp = Math.cos(ba) * br, byp = Math.sin(ba) * br * 0.72;
+            ctx.beginPath();
+            ctx.moveTo(bxp - 4, byp);
+            ctx.lineTo(bxp, byp - 10 - (bb % 4) * 3);
+            ctx.lineTo(bxp + 4, byp);
+            ctx.fill();
+            ctx.stroke();
+          }
+        } else if (z.kind === "lightning") {
+          ctx.globalAlpha = 0.5 + 0.35 * Math.abs(Math.sin(G.time * 16));
+          ctx.strokeStyle = "#fff3a8";
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(0, 0, z.r * 0.8, 0, Math.PI * 2); ctx.stroke();
+        } else if (z.kind === "poison") {
+          ctx.globalAlpha = 0.6;
+          ctx.fillStyle = "#d6ff9a";
+          for (var pb = 0; pb < 6; pb++) {
+            var pba = pb * 1.7 + G.time * 0.8;
+            var pbr = z.r * (0.2 + 0.55 * ((pb * 13) % 10) / 10);
+            var pbr2 = 2.5 + (pb % 3) * 1.2;
+            ctx.beginPath();
+            ctx.arc(Math.cos(pba) * pbr, Math.sin(pba) * pbr * 0.7 - (G.time * 14 + pb * 9) % 20, pbr2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
       }
       ctx.restore();
     }
@@ -2677,6 +3325,40 @@
         ctx.lineTo(-10, -7);
         ctx.closePath();
         ctx.fill();
+      } else if (s.kind === "ice") {
+        ctx.globalAlpha = 0.95;
+        ctx.beginPath();
+        ctx.moveTo(s.r * 1.6, 0);
+        ctx.lineTo(0, s.r * 0.75);
+        ctx.lineTo(-s.r * 1.3, 0);
+        ctx.lineTo(0, -s.r * 0.75);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        ctx.beginPath(); ctx.moveTo(s.r * 0.9, 0); ctx.lineTo(0, -s.r * 0.28); ctx.lineTo(0, s.r * 0.28); ctx.closePath(); ctx.fill();
+      } else if (s.kind === "flame") {
+        var fscale = 0.8 + 0.4 * Math.sin(G.time * 28 + s.x * 0.1);
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(s.r * 1.7, 0);
+        ctx.quadraticCurveTo(s.r * 0.2, s.r * 0.9 * fscale, -s.r * 1.5, 0);
+        ctx.quadraticCurveTo(s.r * 0.2, -s.r * 0.9 * fscale, s.r * 1.7, 0);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,240,170,0.95)";
+        ctx.beginPath(); ctx.arc(s.r * 0.4, 0, s.r * 0.36, 0, Math.PI * 2); ctx.fill();
+      } else if (s.kind === "prism") {
+        ctx.globalAlpha = 0.95;
+        ctx.beginPath();
+        for (var pj = 0; pj < 8; pj++) {
+          var pja = pj / 8 * Math.PI * 2;
+          var pjr = pj % 2 === 0 ? s.r * 1.5 : s.r * 0.55;
+          var pjx = Math.cos(pja) * pjr, pjy = Math.sin(pja) * pjr;
+          if (pj === 0) ctx.moveTo(pjx, pjy); else ctx.lineTo(pjx, pjy);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.9)";
+        ctx.beginPath(); ctx.arc(0, 0, s.r * 0.35, 0, Math.PI * 2); ctx.fill();
       } else {
         ctx.beginPath(); ctx.ellipse(0, 0, s.r * 1.5, s.r * 0.72, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = "rgba(255,255,255,0.9)";
@@ -2864,6 +3546,175 @@
         ctx.lineWidth = 5;
         ctx.stroke();
         ctx.globalAlpha = 1;
+      } else if (f.type === "portal") {
+        var pk = 1 - clamp(f.t / (f.max || 0.5), 0, 1);
+        ctx.save();
+        ctx.translate(sx, sy - 6);
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.5), 0, 1) * 0.85;
+        ctx.strokeStyle = f.color;
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 14;
+        ctx.lineWidth = 2.5;
+        ctx.rotate(G.time * 3.2);
+        ctx.beginPath(); ctx.ellipse(0, 0, f.r * (0.3 + pk * 0.55), f.r * (0.2 + pk * 0.3), 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.rotate(-G.time * 6);
+        ctx.beginPath(); ctx.ellipse(0, 0, f.r * (0.2 + pk * 0.35), f.r * (0.16 + pk * 0.22), 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = hexA(f.color, 0.18);
+        ctx.beginPath(); ctx.ellipse(0, 0, f.r * 0.35, f.r * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      } else if (f.type === "death") {
+        var dk = 1 - clamp(f.t / (f.max ? 0.45 : 1), 0, 1);
+        var dkA = clamp(f.t / 0.45, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = dkA * 0.55;
+        var dg = ctx.createRadialGradient(sx, sy, 2, sx, sy, f.max * (0.4 + dk));
+        dg.addColorStop(0, hexA(f.color, 0.9));
+        dg.addColorStop(1, hexA(f.color, 0));
+        ctx.fillStyle = dg;
+        ctx.beginPath(); ctx.arc(sx, sy, f.max * (0.4 + dk), 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = dkA;
+        ctx.strokeStyle = f.color;
+        ctx.lineWidth = 2;
+        for (var dq = 0; dq < 7; dq++) {
+          var da = dq / 7 * Math.PI * 2 + G.time;
+          var dr = f.r * (0.3 + dk * 1.6);
+          ctx.beginPath();
+          ctx.moveTo(sx + Math.cos(da) * f.r * 0.2, sy + Math.sin(da) * f.r * 0.2);
+          ctx.lineTo(sx + Math.cos(da) * dr, sy + Math.sin(da) * dr);
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else if (f.type === "tell") {
+        ctx.save();
+        ctx.globalAlpha = 0.35 + 0.45 * Math.abs(Math.sin(G.time * 18));
+        ctx.strokeStyle = f.color;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath(); ctx.arc(sx, sy, f.r * 0.7, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      } else if (f.type === "dust") {
+        var duk = 1 - clamp(f.t / (f.max || 0.35), 0, 1);
+        ctx.save();
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.35), 0, 1) * 0.45;
+        ctx.fillStyle = f.color;
+        ctx.beginPath(); ctx.ellipse(sx, sy + 4, f.r * (0.4 + duk), f.r * 0.28 * (0.5 + duk), 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      } else if (f.type === "cross") {
+        var ck2 = 1 - clamp(f.t / (f.max || 0.5), 0, 1);
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(f.ang || 0);
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.5), 0, 1);
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 22;
+        ctx.fillStyle = hexA(f.color, 0.3 * (1 - ck2) + 0.15);
+        ctx.fillRect(-f.r * (0.4 + ck2 * 0.6), -14, f.r * 2 * (0.4 + ck2 * 0.6), 28);
+        ctx.fillRect(-14, -f.r * (0.4 + ck2 * 0.6), 28, f.r * 2 * (0.4 + ck2 * 0.6));
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.fillRect(-f.r * (0.4 + ck2 * 0.6), -4, f.r * 2 * (0.4 + ck2 * 0.6), 8);
+        ctx.fillRect(-4, -f.r * (0.4 + ck2 * 0.6), 8, f.r * 2 * (0.4 + ck2 * 0.6));
+        ctx.restore();
+      } else if (f.type === "lightning") {
+        ctx.save();
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.4), 0, 1);
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 18;
+        ctx.strokeStyle = f.color;
+        for (var lb = 0; lb < 3; lb++) {
+          var lx = sx + rand(-16, 16);
+          ctx.lineWidth = lb === 0 ? 4 : 2;
+          ctx.beginPath();
+          ctx.moveTo(lx, sy - 320 - rand(0, 40));
+          for (var ls = 1; ls <= 7; ls++) {
+            ctx.lineTo(lx + rand(-14, 14), sy - 320 + ls * 46);
+          }
+          ctx.lineTo(sx, sy);
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else if (f.type === "flamewave") {
+        var fk = 1 - clamp(f.t / (f.max || 0.32), 0, 1);
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(f.ang || 0);
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.32), 0, 1);
+        var fg = ctx.createRadialGradient(0, 0, 10, 0, 0, f.r);
+        fg.addColorStop(0, hexA(f.color, 0.9));
+        fg.addColorStop(1, hexA(f.color, 0));
+        ctx.fillStyle = fg;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, f.r * (0.5 + fk * 0.7), -0.42, 0.42);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      } else if (f.type === "vortex") {
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.8), 0, 1) * 0.8;
+        ctx.strokeStyle = f.color;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 12;
+        for (var vv = 0; vv < 4; vv++) {
+          ctx.beginPath();
+          for (var va = 0; va <= 22; va++) {
+            var vr = f.r * (0.12 + va / 22 * 0.85);
+            var vang = va * 0.32 + G.time * 4 + vv * Math.PI / 2;
+            var vx = Math.cos(vang) * vr, vy = Math.sin(vang) * vr * 0.7;
+            if (va === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else if (f.type === "void") {
+        var vk = 1 - clamp(f.t / (f.max || 0.6), 0, 1);
+        ctx.save();
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.6), 0, 1);
+        var vg2 = ctx.createRadialGradient(sx, sy, 4, sx, sy, f.r * (0.4 + vk * 0.7));
+        vg2.addColorStop(0, "rgba(8,2,20,0.92)");
+        vg2.addColorStop(0.6, hexA(f.color, 0.35));
+        vg2.addColorStop(1, hexA(f.color, 0));
+        ctx.fillStyle = vg2;
+        ctx.beginPath(); ctx.arc(sx, sy, f.r * (0.4 + vk * 0.7), 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = f.color;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha *= 0.8;
+        ctx.beginPath(); ctx.arc(sx, sy, f.r * (0.25 + vk * 0.5), 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      } else if (f.type === "spikes") {
+        var spk = 1 - clamp(f.t / (f.max || 0.5), 0, 1);
+        ctx.save();
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.5), 0, 1);
+        ctx.fillStyle = f.color;
+        ctx.strokeStyle = "rgba(20,60,30,0.65)";
+        for (var si2 = 0; si2 < 14; si2++) {
+          var sa2 = si2 / 14 * Math.PI * 2 + 0.2;
+          var srad = f.r * (0.32 + 0.55 * ((si2 * 37) % 10) / 10);
+          var shh = 18 + ((si2 * 53) % 20);
+          var bx = sx + Math.cos(sa2) * srad;
+          var by = sy + Math.sin(sa2) * srad * 0.62;
+          ctx.beginPath();
+          ctx.moveTo(bx - 5, by);
+          ctx.lineTo(bx, by - shh * (0.4 + spk * 0.6));
+          ctx.lineTo(bx + 5, by);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else if (f.type === "orbit") {
+        ctx.save();
+        ctx.globalAlpha = clamp(f.t / (f.max || 0.5), 0, 1) * 0.8;
+        ctx.fillStyle = f.color;
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 10;
+        for (var oi2 = 0; oi2 < 5; oi2++) {
+          var oa2 = G.time * 3.4 + oi2 * Math.PI * 2 / 5;
+          ctx.beginPath(); ctx.arc(sx + Math.cos(oa2) * f.r, sy + Math.sin(oa2) * f.r * 0.55 - 6, 4.5, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
       }
     }
 
@@ -3057,6 +3908,7 @@
         updateAbilities(dt);
         updateBosses(dt);
         updateEnemies(dt);
+        updatePendingHits(dt);
         updateHazards(dt);
         updateGimmick(dt);
         updateWaves(dt);
@@ -3078,6 +3930,7 @@
       drawBullets();
       drawShots();
       drawLasers();
+      if (ART.drawForeground) ART.drawForeground(ctx, G.scene, G.cam, W, H, G.time);
       ART.drawAmbient(ctx, G.scene, G.cam, W, H, G.time);
       drawFx(dt);
       ART.drawFog(ctx, G.scene, W, H);
@@ -3223,7 +4076,7 @@
     cast: function (i) { return G ? castSpell(i | 0, true) : false; },
     gainExp: function (n) { if (G) gainExp(num(n, 0) || 0); },
     levelUp: function () { if (G) levelUp(); },
-    version: "2026-10-25-3"
+    version: "2026-10-25-4"
   };
 
   loadConfig();
